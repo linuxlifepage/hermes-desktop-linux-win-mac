@@ -15,6 +15,11 @@ final class ConnectionStore: ObservableObject {
             savePreferences()
         }
     }
+    @Published private(set) var workspaceFileBookmarks: [WorkspaceFileBookmark] = [] {
+        didSet {
+            savePreferences()
+        }
+    }
 
     private let paths: AppPaths
     private let encoder = JSONEncoder()
@@ -45,6 +50,49 @@ final class ConnectionStore: ObservableObject {
         saveConnections()
     }
 
+    func bookmarks(for workspaceScopeFingerprint: String) -> [WorkspaceFileBookmark] {
+        workspaceFileBookmarks
+            .filter { $0.workspaceScopeFingerprint == workspaceScopeFingerprint }
+            .sorted { lhs, rhs in
+                lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle) == .orderedAscending
+            }
+    }
+
+    @discardableResult
+    func upsertWorkspaceFileBookmark(
+        remotePath: String,
+        title: String? = nil,
+        workspaceScopeFingerprint: String
+    ) -> WorkspaceFileBookmark? {
+        let normalizedPath = remotePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedPath.isEmpty else { return nil }
+
+        let normalizedTitle = title?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
+
+        if let index = workspaceFileBookmarks.firstIndex(where: {
+            $0.workspaceScopeFingerprint == workspaceScopeFingerprint &&
+                $0.remotePath == normalizedPath
+        }) {
+            var bookmark = workspaceFileBookmarks[index]
+            bookmark.title = normalizedTitle ?? bookmark.title
+            bookmark.updatedAt = Date()
+            workspaceFileBookmarks[index] = bookmark
+            return bookmark
+        }
+
+        let bookmark = WorkspaceFileBookmark(
+            workspaceScopeFingerprint: workspaceScopeFingerprint,
+            remotePath: normalizedPath,
+            title: normalizedTitle
+        )
+        workspaceFileBookmarks.append(bookmark)
+        return bookmark
+    }
+
+    func removeWorkspaceFileBookmark(id: UUID) {
+        workspaceFileBookmarks.removeAll { $0.id == id }
+    }
+
     private func load() {
         loadConnections()
         loadPreferences()
@@ -65,7 +113,8 @@ final class ConnectionStore: ObservableObject {
     private func savePreferences() {
         let preferences = AppPreferences(
             lastConnectionID: lastConnectionID,
-            terminalTheme: terminalTheme
+            terminalTheme: terminalTheme,
+            workspaceFileBookmarks: workspaceFileBookmarks
         )
 
         do {
@@ -98,12 +147,15 @@ final class ConnectionStore: ObservableObject {
             let decoded = try decoder.decode(AppPreferences.self, from: data)
             lastConnectionID = decoded.lastConnectionID
             terminalTheme = decoded.terminalTheme ?? .defaultValue
+            workspaceFileBookmarks = decoded.workspaceFileBookmarks ?? []
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
             lastConnectionID = nil
             terminalTheme = .defaultValue
+            workspaceFileBookmarks = []
         } catch {
             lastConnectionID = nil
             terminalTheme = .defaultValue
+            workspaceFileBookmarks = []
             reportPersistenceError(
                 "Unable to load app preferences from \(paths.preferencesURL.lastPathComponent): \(error.localizedDescription)"
             )
@@ -118,4 +170,11 @@ final class ConnectionStore: ObservableObject {
 private struct AppPreferences: Codable {
     var lastConnectionID: UUID?
     var terminalTheme: TerminalThemePreference?
+    var workspaceFileBookmarks: [WorkspaceFileBookmark]?
+}
+
+private extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
+    }
 }

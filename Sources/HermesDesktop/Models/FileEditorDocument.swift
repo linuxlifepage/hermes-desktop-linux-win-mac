@@ -1,7 +1,9 @@
 import Foundation
 
 struct FileEditorDocument {
-    let trackedFile: RemoteTrackedFile
+    let fileID: String
+    var title: String
+    var remotePath: String
     var content: String = ""
     var originalContent: String = ""
     var remoteContentHash: String?

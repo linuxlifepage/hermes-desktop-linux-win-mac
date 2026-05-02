@@ -1,6 +1,6 @@
 import Foundation
 
-enum RemoteTrackedFile: String, CaseIterable, Identifiable {
+enum RemoteTrackedFile: String, CaseIterable, Identifiable, Sendable {
     case user
     case memory
     case soul

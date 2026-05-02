@@ -43,10 +43,11 @@ final class AppState: ObservableObject {
     @Published var isOperatingOnCronJob = false
     @Published var operatingCronJobID: String?
     @Published var isSavingCronJobDraft = false
-    @Published var selectedTrackedFile: RemoteTrackedFile = .memory
-    @Published var memoryDocument = FileEditorDocument(trackedFile: .memory)
-    @Published var userDocument = FileEditorDocument(trackedFile: .user)
-    @Published var soulDocument = FileEditorDocument(trackedFile: .soul)
+    @Published var selectedWorkspaceFileID: String = RemoteTrackedFile.memory.workspaceFileID
+    @Published var workspaceFileDocuments: [String: FileEditorDocument] = [:]
+    @Published var workspaceFileBrowserListing: RemoteDirectoryListing?
+    @Published var workspaceFileBrowserError: String?
+    @Published var isLoadingWorkspaceFileBrowser = false
     @Published var pendingSectionSelection: AppSection?
     @Published var showDiscardChangesAlert = false
 
@@ -109,8 +110,40 @@ final class AppState: ObservableObject {
         return connectionStore.connections.first(where: { $0.id == activeConnectionID })
     }
 
+    var canonicalWorkspaceFileReferences: [WorkspaceFileReference] {
+        guard let activeConnection else { return [] }
+
+        return RemoteTrackedFile.allCases.map { trackedFile in
+            WorkspaceFileReference.canonical(
+                trackedFile,
+                remotePath: resolvedRemotePath(for: trackedFile, connection: activeConnection)
+            )
+        }
+    }
+
+    var bookmarkedWorkspaceFileReferences: [WorkspaceFileReference] {
+        guard let activeConnection else { return [] }
+
+        return connectionStore
+            .bookmarks(for: activeConnection.workspaceScopeFingerprint)
+            .map(WorkspaceFileReference.bookmark)
+    }
+
+    var workspaceFileReferences: [WorkspaceFileReference] {
+        canonicalWorkspaceFileReferences + bookmarkedWorkspaceFileReferences
+    }
+
+    var selectedWorkspaceFileReference: WorkspaceFileReference? {
+        workspaceFileReferences.first { $0.id == selectedWorkspaceFileID } ??
+            workspaceFileReferences.first
+    }
+
+    var workspaceFileBrowserDefaultPath: String {
+        overview?.hermesHome ?? activeConnection?.remoteHermesHomePath ?? "~"
+    }
+
     var hasUnsavedFileChanges: Bool {
-        memoryDocument.isDirty || userDocument.isDirty || soulDocument.isDirty
+        workspaceFileDocuments.values.contains { $0.isDirty }
     }
 
     func requestSectionSelection(_ section: AppSection) {
@@ -131,9 +164,11 @@ final class AppState: ObservableObject {
     }
 
     func discardChangesAndContinue() {
-        memoryDocument.discardChanges()
-        userDocument.discardChanges()
-        soulDocument.discardChanges()
+        for fileID in Array(workspaceFileDocuments.keys) {
+            var document = workspaceFileDocuments[fileID]
+            document?.discardChanges()
+            workspaceFileDocuments[fileID] = document
+        }
         if let pendingSectionSelection {
             selectedSection = pendingSectionSelection
             handleSectionEntry(pendingSectionSelection)
@@ -174,7 +209,7 @@ final class AppState: ObservableObject {
         if isActiveConnection && isChangingWorkspaceScope && hasUnsavedFileChanges {
             activeAlert = AppAlert(
                 title: L10n.string("Unsaved file edits"),
-                message: L10n.string("Save or discard USER.md, MEMORY.md, and SOUL.md before switching the Hermes profile for the active host.")
+                message: L10n.string("Save or discard Workspace Files edits before switching the Hermes profile for the active host.")
             )
             return
         }
@@ -200,7 +235,7 @@ final class AppState: ObservableObject {
         if hasUnsavedFileChanges {
             activeAlert = AppAlert(
                 title: L10n.string("Unsaved file edits"),
-                message: L10n.string("Save or discard USER.md, MEMORY.md, and SOUL.md before switching Hermes profiles.")
+                message: L10n.string("Save or discard Workspace Files edits before switching Hermes profiles.")
             )
             return
         }
@@ -321,11 +356,27 @@ final class AppState: ObservableObject {
         isRefreshingCronJobs = false
     }
 
-    func loadTrackedFile(_ trackedFile: RemoteTrackedFile, forceReload: Bool = false) async {
+    func workspaceFileDocument(for fileID: String) -> FileEditorDocument? {
+        workspaceFileDocuments[fileID]
+    }
+
+    func selectWorkspaceFile(_ fileID: String) {
+        guard workspaceFileReferences.contains(where: { $0.id == fileID }) else { return }
+        selectedWorkspaceFileID = fileID
+    }
+
+    func loadSelectedWorkspaceFile(forceReload: Bool = false) async {
+        guard let reference = selectedWorkspaceFileReference else { return }
+        selectedWorkspaceFileID = reference.id
+        await loadWorkspaceFile(reference, forceReload: forceReload)
+    }
+
+    func loadWorkspaceFile(_ reference: WorkspaceFileReference, forceReload: Bool = false) async {
         guard let profile = activeConnection else { return }
-        var document = document(for: trackedFile)
+        var document = document(for: reference)
 
         if document.hasLoaded && !forceReload {
+            setDocument(document)
             return
         }
 
@@ -335,8 +386,7 @@ final class AppState: ObservableObject {
 
         do {
             let snapshot = try await fileEditorService.read(
-                file: trackedFile,
-                remotePath: resolvedRemotePath(for: trackedFile, connection: profile),
+                remotePath: reference.remotePath,
                 connection: profile
             )
             document.content = snapshot.content
@@ -354,17 +404,28 @@ final class AppState: ObservableObject {
         }
     }
 
-    func saveTrackedFile(_ trackedFile: RemoteTrackedFile) async {
+    func saveSelectedWorkspaceFile() async {
+        await saveWorkspaceFile(fileID: selectedWorkspaceFileID)
+    }
+
+    func saveWorkspaceFile(fileID: String) async {
         guard let profile = activeConnection else { return }
-        var document = document(for: trackedFile)
+        guard let reference = workspaceFileReferences.first(where: { $0.id == fileID }) else { return }
+        var document = document(for: reference)
+        guard document.hasLoaded, document.remoteContentHash != nil else {
+            document.errorMessage = L10n.string("Reload the file before saving.")
+            setDocument(document)
+            setStatusMessage(document.errorMessage)
+            return
+        }
+
         document.isLoading = true
         document.errorMessage = nil
         setDocument(document)
 
         do {
             let saveResult = try await fileEditorService.write(
-                file: trackedFile,
-                remotePath: resolvedRemotePath(for: trackedFile, connection: profile),
+                remotePath: reference.remotePath,
                 content: document.content,
                 expectedContentHash: document.remoteContentHash,
                 connection: profile
@@ -375,7 +436,7 @@ final class AppState: ObservableObject {
             document.hasLoaded = true
             document.isLoading = false
             setDocument(document)
-            setStatusMessage("\(trackedFile.fileName) saved")
+            setStatusMessage("\(reference.title) saved")
         } catch {
             document.isLoading = false
             document.errorMessage = error.localizedDescription
@@ -384,10 +445,69 @@ final class AppState: ObservableObject {
         }
     }
 
-    func updateDocument(_ trackedFile: RemoteTrackedFile, content: String) {
-        var document = document(for: trackedFile)
+    func updateWorkspaceFile(_ fileID: String, content: String) {
+        guard let reference = workspaceFileReferences.first(where: { $0.id == fileID }) else { return }
+        var document = document(for: reference)
         document.content = content
         setDocument(document)
+    }
+
+    func discardWorkspaceFile(_ fileID: String) {
+        var document = workspaceFileDocuments[fileID]
+        document?.discardChanges()
+        workspaceFileDocuments[fileID] = document
+    }
+
+    @discardableResult
+    func addWorkspaceFileBookmark(remotePath: String, title: String? = nil) -> WorkspaceFileBookmark? {
+        guard let activeConnection else { return nil }
+        guard let bookmark = connectionStore.upsertWorkspaceFileBookmark(
+            remotePath: remotePath,
+            title: title,
+            workspaceScopeFingerprint: activeConnection.workspaceScopeFingerprint
+        ) else {
+            return nil
+        }
+
+        let reference = WorkspaceFileReference.bookmark(bookmark)
+        selectedWorkspaceFileID = reference.id
+        workspaceFileDocuments[reference.id] = workspaceFileDocuments[reference.id] ??
+            FileEditorDocument(fileID: reference.id, title: reference.title, remotePath: reference.remotePath)
+        setStatusMessage("\(reference.title) added to Workspace Files")
+        return bookmark
+    }
+
+    func removeWorkspaceFileBookmark(id: UUID) {
+        connectionStore.removeWorkspaceFileBookmark(id: id)
+        workspaceFileDocuments.removeValue(forKey: "bookmark:\(id.uuidString)")
+
+        if selectedWorkspaceFileID == "bookmark:\(id.uuidString)" {
+            selectedWorkspaceFileID = RemoteTrackedFile.memory.workspaceFileID
+        }
+
+        setStatusMessage("Bookmark removed")
+    }
+
+    func browseWorkspaceDirectory(path: String? = nil) async {
+        guard let profile = activeConnection else { return }
+        let trimmedPath = path?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let browsePath = trimmedPath?.isEmpty == false ? trimmedPath! : workspaceFileBrowserDefaultPath
+
+        isLoadingWorkspaceFileBrowser = true
+        workspaceFileBrowserError = nil
+
+        do {
+            workspaceFileBrowserListing = try await fileEditorService.listDirectory(
+                remotePath: browsePath,
+                hermesHome: overview?.hermesHome ?? profile.remoteHermesHomePath,
+                connection: profile
+            )
+            isLoadingWorkspaceFileBrowser = false
+        } catch {
+            isLoadingWorkspaceFileBrowser = false
+            workspaceFileBrowserError = error.localizedDescription
+            setStatusMessage("Unable to browse remote files")
+        }
     }
 
     func loadSessions(reset: Bool = false, query: String? = nil) async {
@@ -881,20 +1001,15 @@ final class AppState: ObservableObject {
     }
 
     private func ensureInitialFileLoads() async {
-        await loadTrackedFile(.user, forceReload: true)
-        await loadTrackedFile(.memory, forceReload: true)
-        await loadTrackedFile(.soul, forceReload: true)
+        await loadSelectedWorkspaceFile()
     }
 
-    private func document(for trackedFile: RemoteTrackedFile) -> FileEditorDocument {
-        switch trackedFile {
-        case .user:
-            return userDocument
-        case .memory:
-            return memoryDocument
-        case .soul:
-            return soulDocument
-        }
+    private func document(for reference: WorkspaceFileReference) -> FileEditorDocument {
+        var document = workspaceFileDocuments[reference.id] ??
+            FileEditorDocument(fileID: reference.id, title: reference.title, remotePath: reference.remotePath)
+        document.title = reference.title
+        document.remotePath = reference.remotePath
+        return document
     }
 
     private func resolvedRemotePath(for trackedFile: RemoteTrackedFile, connection: ConnectionProfile) -> String {
@@ -902,14 +1017,7 @@ final class AppState: ObservableObject {
     }
 
     private func setDocument(_ document: FileEditorDocument) {
-        switch document.trackedFile {
-        case .user:
-            userDocument = document
-        case .memory:
-            memoryDocument = document
-        case .soul:
-            soulDocument = document
-        }
+        workspaceFileDocuments[document.fileID] = document
     }
 
     private func reloadWorkspaceScope(section: AppSection, statusMessage: String) async {
@@ -1076,10 +1184,11 @@ final class AppState: ObservableObject {
     }
 
     private func resetDocuments() {
-        memoryDocument = FileEditorDocument(trackedFile: .memory)
-        userDocument = FileEditorDocument(trackedFile: .user)
-        soulDocument = FileEditorDocument(trackedFile: .soul)
-        selectedTrackedFile = .memory
+        workspaceFileDocuments = [:]
+        workspaceFileBrowserListing = nil
+        workspaceFileBrowserError = nil
+        isLoadingWorkspaceFileBrowser = false
+        selectedWorkspaceFileID = RemoteTrackedFile.memory.workspaceFileID
     }
 
     private func setStatusMessage(_ message: String?) {

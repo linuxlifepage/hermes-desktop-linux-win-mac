@@ -2,18 +2,19 @@ import Foundation
 
 final class FileEditorService: @unchecked Sendable {
     private let sshTransport: SSHTransport
+    private let maxEditableFileBytes = WorkspaceFileLimits.maxEditableFileBytes
+    private let maxDirectoryEntries = 500
 
     init(sshTransport: SSHTransport) {
         self.sshTransport = sshTransport
     }
 
     func read(
-        file: RemoteTrackedFile,
         remotePath: String,
         connection: ConnectionProfile
     ) async throws -> FileSnapshot {
         let script = try RemotePythonScript.wrap(
-            FileRequest(path: remotePath),
+            FileRequest(path: remotePath, maxEditableBytes: maxEditableFileBytes),
             body: """
             import hashlib
             import json
@@ -25,6 +26,13 @@ final class FileEditorService: @unchecked Sendable {
                     fail(f"{payload['path']} does not exist on the active host.")
                 if not target.is_file():
                     fail(f"{payload['path']} is not a regular file.")
+
+                size = target.stat().st_size
+                max_size = int(payload.get("max_editable_bytes") or 0)
+                if max_size > 0 and size > max_size:
+                    size_mb = size / 1000000
+                    limit_mb = max_size / 1000000
+                    fail(f"This file is {size_mb:.1f} MB. Hermes Desktop can edit remote text files up to {limit_mb:g} MB.")
 
                 raw_content = target.read_bytes()
                 content_hash = hashlib.sha256(raw_content).hexdigest()
@@ -55,8 +63,122 @@ final class FileEditorService: @unchecked Sendable {
         )
     }
 
-    func write(
+    func read(
         file: RemoteTrackedFile,
+        remotePath: String,
+        connection: ConnectionProfile
+    ) async throws -> FileSnapshot {
+        try await read(remotePath: remotePath, connection: connection)
+    }
+
+    func listDirectory(
+        remotePath: String,
+        hermesHome: String?,
+        connection: ConnectionProfile
+    ) async throws -> RemoteDirectoryListing {
+        let script = try RemotePythonScript.wrap(
+            DirectoryListRequest(
+                path: remotePath,
+                hermesHome: hermesHome,
+                maxEntries: maxDirectoryEntries
+            ),
+            body: """
+            import json
+            import os
+            import pathlib
+
+            try:
+                home = pathlib.Path.home()
+                hermes_home = resolved_hermes_home(payload)
+                requested_path = payload.get("path") or payload.get("hermes_home") or str(hermes_home)
+                target = expand_remote_path(requested_path, home=home, base_dir=hermes_home)
+
+                if not target.exists():
+                    fail(f"{payload['path']} does not exist on the active host.")
+                if not target.is_dir():
+                    fail(f"{payload['path']} is not a directory.")
+
+                max_entries = int(payload.get("max_entries") or 500)
+                children = list(target.iterdir())
+
+                def entry_sort_key(item):
+                    try:
+                        is_directory = item.is_dir()
+                    except OSError:
+                        is_directory = False
+                    return (0 if is_directory else 1, item.name.lower())
+
+                children.sort(key=entry_sort_key)
+                limited_children = children[:max_entries]
+
+                entries = []
+                for item in limited_children:
+                    stat_result = None
+                    try:
+                        stat_result = item.stat()
+                    except OSError:
+                        stat_result = None
+
+                    try:
+                        is_directory = item.is_dir()
+                    except OSError:
+                        is_directory = False
+
+                    try:
+                        is_file = item.is_file()
+                    except OSError:
+                        is_file = False
+
+                    is_symlink = item.is_symlink()
+                    if is_directory:
+                        kind = "directory"
+                    elif is_file:
+                        kind = "file"
+                    elif is_symlink:
+                        kind = "symlink"
+                    else:
+                        kind = "other"
+
+                    entries.append({
+                        "name": item.name,
+                        "path": item.as_posix(),
+                        "display_path": tilde(item, home),
+                        "kind": kind,
+                        "size": None if is_directory or stat_result is None else stat_result.st_size,
+                        "modified_at": None if stat_result is None else stat_result.st_mtime,
+                        "is_readable": os.access(item, os.R_OK),
+                        "is_writable": os.access(item, os.W_OK),
+                        "is_symlink": is_symlink,
+                    })
+
+                parent = target.parent if target.parent != target else None
+
+                print(json.dumps({
+                    "ok": True,
+                    "requested_path": requested_path,
+                    "resolved_path": target.as_posix(),
+                    "display_path": tilde(target, home),
+                    "parent_path": None if parent is None else parent.as_posix(),
+                    "parent_display_path": None if parent is None else tilde(parent, home),
+                    "entries": entries,
+                    "total_entry_count": len(children),
+                    "is_truncated": len(children) > len(limited_children),
+                }, ensure_ascii=False))
+            except PermissionError:
+                fail(f"Permission denied while reading {payload['path']}.")
+            except Exception as exc:
+                fail(f"Unable to list {payload['path']}: {exc}")
+            """
+        )
+
+        return try await sshTransport.executeJSON(
+            on: connection,
+            pythonScript: script,
+            responseType: RemoteDirectoryListing.self
+        )
+    }
+
+    func write(
         remotePath: String,
         content: String,
         expectedContentHash: String?,
@@ -83,7 +205,6 @@ final class FileEditorService: @unchecked Sendable {
 
             try:
                 target = expand_remote_path(payload["path"]) or pathlib.Path(payload["path"])
-                target.parent.mkdir(parents=True, exist_ok=True)
 
                 if expected_hash is not None:
                     if not target.exists():
@@ -95,6 +216,8 @@ final class FileEditorService: @unchecked Sendable {
                     current_hash = hashlib.sha256(current_bytes).hexdigest()
                     if current_hash != expected_hash:
                         fail(f"{payload['path']} changed on the active host after it was loaded. Reload from Remote before saving.")
+
+                target.parent.mkdir(parents=True, exist_ok=True)
 
                 fd, temp_name = tempfile.mkstemp(
                     dir=str(target.parent),
@@ -143,10 +266,43 @@ final class FileEditorService: @unchecked Sendable {
             contentHash: response.contentHash
         )
     }
+
+    func write(
+        file: RemoteTrackedFile,
+        remotePath: String,
+        content: String,
+        expectedContentHash: String?,
+        connection: ConnectionProfile
+    ) async throws -> FileSaveResult {
+        try await write(
+            remotePath: remotePath,
+            content: content,
+            expectedContentHash: expectedContentHash,
+            connection: connection
+        )
+    }
 }
 
 private struct FileRequest: Encodable {
     let path: String
+    let maxEditableBytes: Int64
+
+    enum CodingKeys: String, CodingKey {
+        case path
+        case maxEditableBytes = "max_editable_bytes"
+    }
+}
+
+private struct DirectoryListRequest: Encodable {
+    let path: String
+    let hermesHome: String?
+    let maxEntries: Int
+
+    enum CodingKeys: String, CodingKey {
+        case path
+        case hermesHome = "hermes_home"
+        case maxEntries = "max_entries"
+    }
 }
 
 private struct FileWriteRequest: Encodable {
