@@ -12,6 +12,7 @@ final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
     private var onTitleChange: ((String) -> Void)?
     private var onDirectoryChange: ((String?) -> Void)?
     private var onProcessExit: ((Int32?) -> Void)?
+    private var traceSession: TerminalTraceSession?
 
     override init() {
         super.init()
@@ -43,10 +44,17 @@ final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
         container.mount(hostView)
         applyAppearance(appearance)
         setActive(isActive)
+        traceSession?.record(
+            "mount",
+            terminalView: hostView.terminalView,
+            hostView: hostView,
+            note: isActive ? "active" : "inactive"
+        )
         scheduleStartIfNeeded(for: request)
     }
 
     func unmount(from container: TerminalMountContainerView) {
+        traceSession?.record("unmount", terminalView: hostView.terminalView, hostView: hostView)
         container.onLayout = nil
         container.unmountHostedView()
     }
@@ -55,29 +63,65 @@ final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
         performSelector(onMainThread: #selector(terminateOnMainThread), with: nil, waitUntilDone: false)
     }
 
-    nonisolated func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
+    nonisolated func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            traceSession?.record(
+                "pty-size-changed",
+                terminalView: hostView.terminalView,
+                hostView: hostView,
+                reportedCols: newCols,
+                reportedRows: newRows
+            )
+        }
+    }
 
     nonisolated func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
         Task { @MainActor [weak self] in
-            self?.onTitleChange?(title)
+            guard let self else { return }
+            traceSession?.record(
+                "terminal-title",
+                terminalView: hostView.terminalView,
+                hostView: hostView,
+                note: title
+            )
+            onTitleChange?(title)
         }
     }
 
     nonisolated func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {
         Task { @MainActor [weak self] in
-            self?.onDirectoryChange?(directory)
+            guard let self else { return }
+            traceSession?.record(
+                "current-directory",
+                terminalView: hostView.terminalView,
+                hostView: hostView,
+                note: directory
+            )
+            onDirectoryChange?(directory)
         }
     }
 
     nonisolated func processTerminated(source: TerminalView, exitCode: Int32?) {
         Task { @MainActor [weak self] in
-            self?.onProcessExit?(exitCode)
+            guard let self else { return }
+            traceSession?.record(
+                "process-terminated",
+                terminalView: hostView.terminalView,
+                hostView: hostView,
+                note: exitCode.map(String.init) ?? "nil"
+            )
+            onProcessExit?(exitCode)
         }
     }
 
     private func scheduleStartIfNeeded(for request: TerminalLaunchRequest) {
         let launchToken = request.launchToken
         guard startedLaunchToken != launchToken else { return }
+        if traceSession == nil {
+            traceSession = TerminalTraceSession.make(launchToken: launchToken)
+            traceSession?.record("trace-created", terminalView: hostView.terminalView, hostView: hostView)
+        }
         pendingLaunchRequest = request
         startPendingLaunchIfReady()
     }
@@ -85,6 +129,7 @@ final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
     private func mountedContainerDidLayout(_ container: TerminalMountContainerView) {
         guard hostView.superview === container else { return }
         hostView.synchronizeTerminalLayout(maintainingScrollToEnd: true)
+        traceSession?.record("container-layout", terminalView: hostView.terminalView, hostView: hostView)
         startPendingLaunchIfReady()
     }
 
@@ -97,6 +142,7 @@ final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
         guard !hostView.isHidden, hostView.hasUsableTerminalFrame else { return }
 
         hostView.synchronizeTerminalLayout(maintainingScrollToEnd: true)
+        traceSession?.record("pending-launch-ready", terminalView: hostView.terminalView, hostView: hostView)
         pendingLaunchRequest = nil
         startIfNeeded(for: request)
     }
@@ -104,12 +150,22 @@ final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
     private func startIfNeeded(for request: TerminalLaunchRequest) {
         guard startedLaunchToken != request.launchToken else { return }
         startedLaunchToken = request.launchToken
+        if let traceSession {
+            hostView.terminalView.setHostLogging(directory: traceSession.rawHostOutputURL.path)
+            traceSession.record(
+                "trace-enabled",
+                terminalView: hostView.terminalView,
+                hostView: hostView,
+                note: traceSession.rootURL.path
+            )
+        }
 
         let environment = [
             "TERM=xterm-256color",
             "COLORTERM=truecolor"
         ]
 
+        traceSession?.record("start-process", terminalView: hostView.terminalView, hostView: hostView)
         hostView.terminalView.startProcess(
             executable: "/usr/bin/ssh",
             args: request.sshArguments,
@@ -128,9 +184,11 @@ final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
     private func setActive(_ isActive: Bool) {
         hostView.isHidden = !isActive
         if !isActive {
+            traceSession?.record("set-inactive", terminalView: hostView.terminalView, hostView: hostView)
             hostView.window?.makeFirstResponder(nil)
         } else {
             hostView.synchronizeTerminalLayout(maintainingScrollToEnd: true)
+            traceSession?.record("set-active", terminalView: hostView.terminalView, hostView: hostView)
             startPendingLaunchIfReady()
         }
     }
@@ -138,9 +196,12 @@ final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
     @MainActor
     @objc
     private func terminateOnMainThread() {
+        traceSession?.record("terminate", terminalView: hostView.terminalView, hostView: hostView)
+        hostView.terminalView.setHostLogging(directory: nil)
         pendingLaunchRequest = nil
         startedLaunchToken = nil
         hostView.terminalView.terminate()
+        traceSession = nil
     }
 }
 
