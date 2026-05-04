@@ -709,7 +709,7 @@ final class SessionBrowserService: @unchecked Sendable {
 
             for candidate in iter_session_store_candidates(hermes_home, home, hinted_path):
                 try:
-                    connection = sqlite3.connect(f"file:{candidate}?mode=ro", uri=True)
+                    connection = connect_sqlite_readonly(candidate)
                     connection.execute("PRAGMA busy_timeout = 2000")
                     tables = [row[0] for row in connection.execute(
                         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
@@ -750,7 +750,7 @@ final class SessionBrowserService: @unchecked Sendable {
             if not store_path:
                 return None
 
-            connection = sqlite3.connect(f"file:{store_path}?mode=ro", uri=True)
+            connection = connect_sqlite_readonly(store_path)
             connection.execute("PRAGMA busy_timeout = 2000")
 
             session_columns = [row[1] for row in connection.execute(

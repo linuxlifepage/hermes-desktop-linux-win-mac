@@ -22,6 +22,7 @@ enum RemotePythonScript {
 
     private static let sharedHelpers = """
     import os
+    import sqlite3
 
     def fail(message):
         print(json.dumps({
@@ -70,6 +71,23 @@ enum RemotePythonScript {
 
     def quote_text(value):
         return "'" + str(value).replace("'", "''") + "'"
+
+    def connect_sqlite_readonly(path):
+        connection = None
+        try:
+            connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+            connection.execute("PRAGMA schema_version").fetchone()
+            return connection
+        except sqlite3.OperationalError as exc:
+            if connection is not None:
+                try:
+                    connection.close()
+                except Exception:
+                    pass
+            message = str(exc).lower()
+            if "unable to open database file" not in message and "readonly database" not in message:
+                raise
+            return sqlite3.connect(f"file:{path}?mode=ro&immutable=1", uri=True)
 
     def expand_remote_path(value, home=None, base_dir=None):
         if home is None:

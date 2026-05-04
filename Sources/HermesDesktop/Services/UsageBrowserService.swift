@@ -65,7 +65,7 @@ final class UsageBrowserService: @unchecked Sendable {
             for candidate in iter_session_store_candidates(hermes_home, home, hinted_path):
                 connection = None
                 try:
-                    connection = sqlite3.connect(f"file:{candidate}?mode=ro", uri=True)
+                    connection = connect_sqlite_readonly(candidate)
                     tables = [
                         row[0]
                         for row in connection.execute(
@@ -136,7 +136,7 @@ final class UsageBrowserService: @unchecked Sendable {
                 unavailable("No readable Hermes SQLite session store with a sessions table was discovered on the active host.")
                 sys.exit(0)
 
-            connection = sqlite3.connect(f"file:{store['resolved_path']}?mode=ro", uri=True)
+            connection = connect_sqlite_readonly(store["resolved_path"])
 
             try:
                 columns = [

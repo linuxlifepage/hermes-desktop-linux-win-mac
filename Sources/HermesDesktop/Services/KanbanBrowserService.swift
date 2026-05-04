@@ -952,7 +952,7 @@ final class KanbanBrowserService: @unchecked Sendable {
                     except Exception:
                         stats = direct_stats(conn)
                 else:
-                    conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                    conn = connect_sqlite_readonly(db_path)
                     conn.row_factory = sqlite3.Row
                     tasks = direct_tasks(conn, include_archived)
                     assignees = direct_assignees(conn)
@@ -1036,7 +1036,7 @@ final class KanbanBrowserService: @unchecked Sendable {
                         "worker_log": worker_log,
                     }
 
-                conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+                conn = connect_sqlite_readonly(db_path)
                 conn.row_factory = sqlite3.Row
                 if not table_exists(conn, "tasks"):
                     return None

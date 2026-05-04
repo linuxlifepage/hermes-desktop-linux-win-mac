@@ -37,7 +37,7 @@ final class RemoteHermesService: @unchecked Sendable {
 
             for candidate in iter_session_store_candidates(hermes_home):
                 try:
-                    conn = sqlite3.connect(f"file:{candidate}?mode=ro", uri=True)
+                    conn = connect_sqlite_readonly(candidate)
                     cursor = conn.execute(
                         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
                     )
