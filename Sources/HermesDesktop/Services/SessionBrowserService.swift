@@ -485,13 +485,16 @@ final class SessionBrowserService: @unchecked Sendable {
 
         def sort_key(value):
             if value is None:
-                return -1
+                return (0, 0.0, "")
             if isinstance(value, (int, float)):
-                return float(value)
+                return (2, float(value), "")
             try:
-                return float(value)
+                return (2, float(value), "")
             except Exception:
-                return str(value)
+                parsed = parse_timestamp_value(value)
+                if isinstance(parsed, (int, float)):
+                    return (2, float(parsed), "")
+                return (1, 0.0, str(value))
 
         def sanitize_preview(text):
             if text is None:

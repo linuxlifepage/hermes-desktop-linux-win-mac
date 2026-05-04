@@ -59,13 +59,19 @@ final class RemoteHermesService: @unchecked Sendable {
             return None
 
         def find_hermes_binary():
-            candidate = shutil.which("hermes")
+            home = pathlib.Path.home()
+            path_entries = [
+                str(home / ".local" / "bin"),
+                str(home / ".hermes" / "hermes-agent" / "venv" / "bin"),
+                str(home / ".cargo" / "bin"),
+                "/opt/homebrew/bin",
+                "/usr/local/bin",
+                os.environ.get("PATH", ""),
+            ]
+            search_path = os.pathsep.join([entry for entry in path_entries if entry])
+            candidate = shutil.which("hermes", path=search_path)
             if candidate:
                 return candidate
-
-            fallback = pathlib.Path.home() / ".local" / "bin" / "hermes"
-            if fallback.exists() and os.access(fallback, os.X_OK):
-                return str(fallback)
 
             return None
 

@@ -402,15 +402,23 @@ final class CronBrowserService: @unchecked Sendable {
         import subprocess
 
         def find_hermes_binary():
-            candidate = shutil.which("hermes")
+            candidate = shutil.which("hermes", path=hermes_search_path())
             if candidate:
                 return candidate
 
-            fallback = pathlib.Path.home() / ".local" / "bin" / "hermes"
-            if fallback.exists() and os.access(fallback, os.X_OK):
-                return str(fallback)
-
             return None
+
+        def hermes_search_path():
+            home = pathlib.Path.home()
+            path_entries = [
+                str(home / ".local" / "bin"),
+                str(home / ".hermes" / "hermes-agent" / "venv" / "bin"),
+                str(home / ".cargo" / "bin"),
+                "/opt/homebrew/bin",
+                "/usr/local/bin",
+                os.environ.get("PATH", ""),
+            ]
+            return os.pathsep.join([entry for entry in path_entries if entry])
 
         job_id = str(payload.get("job_id") or "").strip()
         command = str(payload.get("command") or "").strip()
@@ -431,10 +439,14 @@ final class CronBrowserService: @unchecked Sendable {
         command_args.extend(["cron", command, job_id])
 
         try:
+            env = os.environ.copy()
+            env["HERMES_HOME"] = str(resolved_hermes_home())
+            env["PATH"] = hermes_search_path()
             completed = subprocess.run(
                 command_args,
                 capture_output=True,
                 text=True,
+                env=env,
             )
         except Exception as exc:
             fail(f"Unable to launch Hermes CLI: {exc}")

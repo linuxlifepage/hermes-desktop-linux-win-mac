@@ -89,6 +89,7 @@ final class HermesChatService: @unchecked Sendable {
 
             path_entries = [
                 str(home / ".local" / "bin"),
+                str(home / ".hermes" / "hermes-agent" / "venv" / "bin"),
                 str(home / ".cargo" / "bin"),
                 "/opt/homebrew/bin",
                 "/usr/local/bin",
