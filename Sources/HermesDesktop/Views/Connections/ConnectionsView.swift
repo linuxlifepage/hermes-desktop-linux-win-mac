@@ -9,7 +9,7 @@ struct ConnectionsView: View {
     @State private var editingExistingConnection = false
 
     var body: some View {
-        ScrollView {
+        HermesPageContainer(width: .standard) {
             VStack(alignment: .leading, spacing: 24) {
                 HermesPageHeader(
                     title: "Hosts",
@@ -58,10 +58,6 @@ struct ConnectionsView: View {
                     }
                 }
             }
-            .frame(maxWidth: 1120, alignment: .leading)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 26)
-            .frame(maxWidth: .infinity, alignment: .top)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .sheet(isPresented: $isPresentingEditor) {

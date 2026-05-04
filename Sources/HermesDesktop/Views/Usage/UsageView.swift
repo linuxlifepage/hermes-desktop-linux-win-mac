@@ -6,7 +6,7 @@ struct UsageView: View {
     private let topRankingPanelHeight: CGFloat = 490
 
     var body: some View {
-        ScrollView {
+        HermesPageContainer(width: .analytics) {
             VStack(alignment: .leading, spacing: 24) {
                 HermesPageHeader(
                     title: "Usage",
@@ -20,10 +20,6 @@ struct UsageView: View {
 
                 usageContent
             }
-            .frame(maxWidth: 1080, alignment: .leading)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 26)
-            .frame(maxWidth: .infinity, alignment: .top)
             .overlay(alignment: .topTrailing) {
                 if appState.isLoadingUsage && !appState.isRefreshingUsage && appState.usageSummary != nil {
                     HermesLoadingOverlay()

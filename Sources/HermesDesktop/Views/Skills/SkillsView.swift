@@ -14,23 +14,9 @@ struct SkillsView: View {
                 HermesPageHeader(
                     title: "Skills",
                     subtitle: "Browse the Hermes skill library discovered on the active host."
-                ) {
-                    HStack(spacing: 10) {
-                        Button {
-                            startCreating()
-                        } label: {
-                            Label(L10n.string("New"), systemImage: "plus")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(appState.isSavingSkillDraft)
+                )
 
-                        HermesRefreshButton(isRefreshing: appState.isRefreshingSkills) {
-                            Task { await appState.refreshSkills() }
-                        }
-                    }
-                    .disabled(appState.isLoadingSkills)
-                }
-
+                skillsToolbar
                 skillsContent
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -50,15 +36,7 @@ struct SkillsView: View {
 
     @ViewBuilder
     private var skillsContent: some View {
-        if appState.skills.isEmpty {
-            skillsPanel
-        } else {
-            skillsPanel
-                .overlay(alignment: .topTrailing) {
-                    skillsSearchToolbar
-                        .offset(y: -38)
-                }
-        }
+        skillsPanel
     }
 
     @ViewBuilder
@@ -127,11 +105,26 @@ struct SkillsView: View {
         }
     }
 
-    private var skillsSearchToolbar: some View {
-        HermesExpandableSearchField(
+    private var skillsToolbar: some View {
+        HermesSearchActionBar(
             text: $searchText,
             prompt: "Search skills"
-        )
+        ) {
+            HStack(spacing: 10) {
+                Button {
+                    startCreating()
+                } label: {
+                    Label(L10n.string("New"), systemImage: "plus")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(appState.isSavingSkillDraft)
+
+                HermesRefreshButton(isRefreshing: appState.isRefreshingSkills) {
+                    Task { await appState.refreshSkills() }
+                }
+            }
+            .disabled(appState.isLoadingSkills)
+        }
     }
 
     private var panelTitle: String {

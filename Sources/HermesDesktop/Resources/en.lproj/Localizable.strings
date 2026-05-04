@@ -371,6 +371,9 @@
 "Timezone" = "Timezone";
 "Transcript" = "Transcript";
 "Try searching by session name, ID, or preview text." = "Try searching by session name, ID, or preview text.";
+"Try searching by session name, ID, preview text, or message content." = "Try searching by session name, ID, preview text, or message content.";
+"1 match" = "1 match";
+"%@ matches" = "%@ matches";
 "Try searching by title, schedule, skill, model, delivery target or prompt text." = "Try searching by title, schedule, skill, model, delivery target or prompt text.";
 "Unable to load cron jobs" = "Unable to load cron jobs";
 "Unable to load sessions" = "Unable to load sessions";
@@ -455,19 +458,13 @@
 "A valid schedule is required." = "A valid schedule is required.";
 "%@ saved" = "%@ saved";
 "%@ added to Workspace Files" = "%@ added to Workspace Files";
-"%@ pinned" = "%@ pinned";
-"%@ unpinned" = "%@ unpinned";
 "Bookmark removed" = "Bookmark removed";
 "Skill names must be comma-separated without embedded commas." = "Skill names must be comma-separated without embedded commas.";
 "Task title is required." = "Task title is required.";
 "Unpin session" = "Unpin session";
 "Unable to browse remote files" = "Unable to browse remote files";
 "Unable to load session transcript" = "Unable to load session transcript";
-"Starting Hermes session…" = "Starting Hermes session…";
-"Hermes session saved on the host" = "Hermes session saved on the host";
 "Unable to start Hermes session" = "Unable to start Hermes session";
-"Sending prompt to Hermes…" = "Sending prompt to Hermes…";
-"Hermes response saved on the host" = "Hermes response saved on the host";
 "Unable to send prompt to Hermes" = "Unable to send prompt to Hermes";
 "Session deleted locally and on the remote Hermes host" = "Session deleted locally and on the remote Hermes host";
 "Unable to delete session" = "Unable to delete session";
@@ -527,6 +524,7 @@
 "Unable to delete Kanban task" = "Unable to delete Kanban task";
 "Nudging Kanban dispatcher..." = "Nudging Kanban dispatcher...";
 "Kanban dispatcher nudged" = "Kanban dispatcher nudged";
+"Kanban dispatch: %@ spawned, %@ promoted" = "Kanban dispatch: %@ spawned, %@ promoted";
 "Unable to nudge Kanban dispatcher" = "Unable to nudge Kanban dispatcher";
 "Customize terminal colors" = "Customize terminal colors";
 "Active %@" = "Active %@";

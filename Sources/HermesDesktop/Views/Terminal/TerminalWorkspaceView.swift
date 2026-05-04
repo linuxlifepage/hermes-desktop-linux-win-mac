@@ -6,10 +6,11 @@ struct TerminalWorkspaceView: View {
     let ensureTerminalSession: () -> Void
     let updateTerminalTheme: (TerminalThemePreference) -> Void
     @State private var isShowingAppearanceEditor = false
+    private let tabStripHeight: CGFloat = 44
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
+            HStack(alignment: .center, spacing: 8) {
                 if !workspace.tabs.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 8) {
@@ -28,6 +29,7 @@ struct TerminalWorkspaceView: View {
                         .padding(.vertical, 1)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: tabStripHeight)
                     .layoutPriority(1)
                 }
 
@@ -49,7 +51,8 @@ struct TerminalWorkspaceView: View {
                 )
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 8)
+            .padding(.vertical, 6)
+            .frame(height: tabStripHeight + 12)
             .background(.thinMaterial)
 
             if let selectedTab = workspace.selectedTab {
@@ -163,6 +166,7 @@ private struct TerminalTabChip: View {
         }
         .padding(.horizontal, horizontalPadding)
         .padding(.vertical, verticalPadding)
+        .frame(height: 38)
         .background(backgroundColor, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -187,23 +191,23 @@ private struct TerminalTabChip: View {
     }
 
     private var profileFont: Font {
-        isCurrentWorkspace ? .headline.weight(.semibold) : .subheadline.weight(.semibold)
+        isCurrentWorkspace ? .subheadline.weight(.semibold) : .caption.weight(.semibold)
     }
 
     private var hostFont: Font {
-        isCurrentWorkspace ? .caption : .caption2
+        .caption2
     }
 
     private var horizontalPadding: CGFloat {
-        isCurrentWorkspace ? 12 : 9
+        isCurrentWorkspace ? 10 : 8
     }
 
     private var verticalPadding: CGFloat {
-        isCurrentWorkspace ? 7 : 5
+        isCurrentWorkspace ? 5 : 4
     }
 
     private var closeButtonReserveWidth: CGFloat {
-        24
+        22
     }
 }
 
@@ -231,11 +235,13 @@ private struct TerminalAppearanceToolbarButton: View {
                 Image(systemName: "slider.horizontal.3")
                     .foregroundStyle(.secondary)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .frame(height: 38)
             .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.plain)
+        .fixedSize()
         .popover(isPresented: $isPresented, arrowEdge: .top) {
             TerminalAppearanceEditor(themePreference: $themePreference)
         }

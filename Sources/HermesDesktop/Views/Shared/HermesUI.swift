@@ -1,5 +1,51 @@
 import SwiftUI
 
+enum HermesPageWidth {
+    case standard
+    case dashboard
+    case analytics
+
+    var maxWidth: CGFloat {
+        switch self {
+        case .standard:
+            return 1360
+        case .dashboard:
+            return 1480
+        case .analytics:
+            return 1560
+        }
+    }
+}
+
+struct HermesPageContainer<Content: View>: View {
+    let width: HermesPageWidth
+    let horizontalPadding: CGFloat
+    let verticalPadding: CGFloat
+    let content: Content
+
+    init(
+        width: HermesPageWidth = .standard,
+        horizontalPadding: CGFloat = 28,
+        verticalPadding: CGFloat = 26,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.width = width
+        self.horizontalPadding = horizontalPadding
+        self.verticalPadding = verticalPadding
+        self.content = content()
+    }
+
+    var body: some View {
+        ScrollView {
+            content
+                .frame(maxWidth: width.maxWidth, alignment: .leading)
+                .padding(.horizontal, horizontalPadding)
+                .padding(.vertical, verticalPadding)
+                .frame(maxWidth: .infinity, alignment: .top)
+        }
+    }
+}
+
 struct HermesPageHeader<Accessory: View>: View {
     let title: String
     let subtitle: String
@@ -368,6 +414,58 @@ struct HermesExpandableSearchField: View {
                 isExpanded = false
             }
         }
+    }
+}
+
+struct HermesSearchActionBar<LeadingContent: View>: View {
+    @Binding var text: String
+
+    var prompt = "Search"
+    var collapsedWidth: CGFloat = 34
+    var expandedWidth: CGFloat = 240
+    let leadingContent: LeadingContent
+
+    init(
+        text: Binding<String>,
+        prompt: String = "Search",
+        collapsedWidth: CGFloat = 34,
+        expandedWidth: CGFloat = 240,
+        @ViewBuilder leadingContent: () -> LeadingContent
+    ) {
+        self._text = text
+        self.prompt = prompt
+        self.collapsedWidth = collapsedWidth
+        self.expandedWidth = expandedWidth
+        self.leadingContent = leadingContent()
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                leadingContent
+
+                Spacer(minLength: 12)
+
+                searchField
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                leadingContent
+
+                searchField
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var searchField: some View {
+        HermesExpandableSearchField(
+            text: $text,
+            prompt: prompt,
+            collapsedWidth: collapsedWidth,
+            expandedWidth: expandedWidth
+        )
     }
 }
 

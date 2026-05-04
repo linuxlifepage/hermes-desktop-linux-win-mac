@@ -11,24 +11,9 @@ struct SessionsView: View {
                 HermesPageHeader(
                     title: "Sessions",
                     subtitle: "Browse the recent Hermes conversations discovered on the active host."
-                ) {
-                    HStack(spacing: 10) {
-                        Button {
-                            searchText = ""
-                            appState.prepareNewSessionComposer()
-                        } label: {
-                            Label(L10n.string("New Chat"), systemImage: "plus")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(appState.isSendingSessionMessage)
+                )
 
-                        HermesRefreshButton(isRefreshing: appState.isRefreshingSessions) {
-                            Task { await appState.refreshSessions(query: searchText) }
-                        }
-                        .disabled(appState.isLoadingSessions)
-                    }
-                }
-
+                sessionsToolbar
                 sessionsContent
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -86,15 +71,7 @@ struct SessionsView: View {
 
     @ViewBuilder
     private var sessionsContent: some View {
-        if !hasVisibleSessions && appState.sessionSearchQuery.isEmpty && trimmedSearchText.isEmpty {
-            sessionsPanel
-        } else {
-            sessionsPanel
-                .overlay(alignment: .topTrailing) {
-                    sessionsSearchToolbar
-                        .offset(y: -38)
-                }
-        }
+        sessionsPanel
     }
 
     @ViewBuilder
@@ -120,7 +97,7 @@ struct SessionsView: View {
                 ContentUnavailableView(
                     L10n.string("No matching sessions"),
                     systemImage: "magnifyingglass",
-                    description: Text(L10n.string("Try searching by session name, ID, or preview text."))
+                    description: Text(L10n.string("Try searching by session name, ID, preview text, or message content."))
                 )
                 .frame(maxWidth: .infinity, minHeight: 300)
             }
@@ -222,11 +199,27 @@ struct SessionsView: View {
         }
     }
 
-    private var sessionsSearchToolbar: some View {
-        HermesExpandableSearchField(
+    private var sessionsToolbar: some View {
+        HermesSearchActionBar(
             text: $searchText,
             prompt: "Search sessions"
-        )
+        ) {
+            HStack(spacing: 10) {
+                Button {
+                    searchText = ""
+                    appState.prepareNewSessionComposer()
+                } label: {
+                    Label(L10n.string("New Chat"), systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+                .disabled(appState.isSendingSessionMessage)
+
+                HermesRefreshButton(isRefreshing: appState.isRefreshingSessions) {
+                    Task { await appState.refreshSessions(query: searchText) }
+                }
+                .disabled(appState.isLoadingSessions)
+            }
+        }
     }
 
     private var panelTitle: String {
@@ -325,7 +318,11 @@ private struct SessionCardRow: View {
                 }
             }
 
-            if let preview = session.preview, !preview.isEmpty {
+            if let searchMatch = session.searchMatch,
+               let snippet = searchMatch.snippet,
+               !snippet.isEmpty {
+                searchMatchPreview(searchMatch, snippet: snippet)
+            } else if let preview = session.preview, !preview.isEmpty {
                 Text(preview)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -355,6 +352,38 @@ private struct SessionCardRow: View {
                 }
             }
         }
+    }
+
+    private func searchMatchPreview(_ match: SessionSearchMatch, snippet: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 6) {
+                Image(systemName: "text.magnifyingglass")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+
+                Text(searchMatchLabel(match))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color.accentColor)
+            }
+
+            Text(snippet)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+    }
+
+    private func searchMatchLabel(_ match: SessionSearchMatch) -> String {
+        let countText = match.matchCount == 1
+            ? L10n.string("1 match")
+            : L10n.string("%@ matches", "\(match.matchCount)")
+
+        guard let role = match.role else {
+            return countText
+        }
+
+        return "\(role.displayTitle) - \(countText)"
     }
 
     private var pinHelpText: String {

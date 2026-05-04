@@ -20,6 +20,7 @@ struct SessionSummary: Codable, Identifiable, Hashable, Sendable, TitleIdentifia
     let lastActive: SessionTimestamp?
     let messageCount: Int?
     let preview: String?
+    let searchMatch: SessionSearchMatch?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -29,6 +30,43 @@ struct SessionSummary: Codable, Identifiable, Hashable, Sendable, TitleIdentifia
         case lastActive = "last_active"
         case messageCount = "message_count"
         case preview
+        case searchMatch = "search_match"
+    }
+
+    init(
+        id: String,
+        title: String?,
+        model: String?,
+        startedAt: SessionTimestamp?,
+        lastActive: SessionTimestamp?,
+        messageCount: Int?,
+        preview: String?,
+        searchMatch: SessionSearchMatch? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.model = model
+        self.startedAt = startedAt
+        self.lastActive = lastActive
+        self.messageCount = messageCount
+        self.preview = preview
+        self.searchMatch = searchMatch
+    }
+}
+
+struct SessionSearchMatch: Codable, Hashable, Sendable {
+    let matchCount: Int
+    let messageID: String?
+    let role: SessionMessageRole?
+    let timestamp: SessionTimestamp?
+    let snippet: String?
+
+    enum CodingKeys: String, CodingKey {
+        case matchCount = "match_count"
+        case messageID = "message_id"
+        case role
+        case timestamp
+        case snippet
     }
 }
 

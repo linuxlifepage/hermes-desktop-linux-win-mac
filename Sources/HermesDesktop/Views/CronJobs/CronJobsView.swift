@@ -63,31 +63,29 @@ struct CronJobsView: View {
     }
 
     private var filterBar: some View {
-        HStack(spacing: 10) {
-            Picker("Filter", selection: $filterMode) {
-                ForEach(CronFilterMode.allCases, id: \.self) { mode in
-                    Text(L10n.string(mode.rawValue)).tag(mode)
+        HermesSearchActionBar(
+            text: $searchText,
+            prompt: "Search jobs"
+        ) {
+            HStack(spacing: 10) {
+                Picker("Filter", selection: $filterMode) {
+                    ForEach(CronFilterMode.allCases, id: \.self) { mode in
+                        Text(L10n.string(mode.rawValue)).tag(mode)
+                    }
                 }
+                .pickerStyle(.segmented)
+                .frame(width: 180)
+
+                Button {
+                    startCreating()
+                } label: {
+                    Label(L10n.string("New"), systemImage: "plus")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.borderedProminent)
+                .help(L10n.string("Create a new cron job"))
+                .disabled(appState.isSavingCronJobDraft || appState.isOperatingOnCronJob)
             }
-            .pickerStyle(.segmented)
-            .frame(width: 180)
-
-            Button {
-                startCreating()
-            } label: {
-                Label(L10n.string("New"), systemImage: "plus")
-                    .labelStyle(.iconOnly)
-            }
-            .buttonStyle(.borderedProminent)
-            .help(L10n.string("Create a new cron job"))
-            .disabled(appState.isSavingCronJobDraft || appState.isOperatingOnCronJob)
-
-            Spacer(minLength: 12)
-
-            HermesExpandableSearchField(
-                text: $searchText,
-                prompt: "Search jobs"
-            )
         }
     }
 

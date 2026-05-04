@@ -82,9 +82,10 @@ final class SessionBrowserService: @unchecked Sendable {
 
         try:
             context = try_open_store()
+            search_query = normalize_search_text(request.get("query"))
 
             if context is None:
-                items = build_jsonl_session_summaries()
+                items = build_jsonl_session_summaries(search_query)
                 if not items:
                     fail(
                         f"No readable SQLite session store was discovered under {display_hermes_home()}, "
@@ -165,9 +166,27 @@ final class SessionBrowserService: @unchecked Sendable {
 
                 items.sort(key=lambda item: sort_key(item.get("last_active") or item.get("started_at")), reverse=True)
 
-            query = normalize_search_text(request.get("query"))
-            if query is not None:
-                items = [item for item in items if session_matches_query(item, query)]
+            if search_query is not None:
+                search_matches = {}
+                if context is not None:
+                    search_matches = build_sqlite_session_search_matches(context, search_query)
+
+                filtered_items = []
+                for item in items:
+                    session_id = stringify(item.get("id"))
+                    if session_id and session_id in search_matches:
+                        item["search_match"] = search_matches[session_id]
+                        filtered_items.append(item)
+                        continue
+
+                    if item.get("search_match") or session_matches_query(item, search_query):
+                        if not item.get("search_match"):
+                            metadata_match = metadata_search_match(item, search_query)
+                            if metadata_match:
+                                item["search_match"] = metadata_match
+                        filtered_items.append(item)
+
+                items = filtered_items
 
             start = int(request.get("offset", 0))
             end = start + int(request.get("limit", 50))
@@ -380,6 +399,71 @@ final class SessionBrowserService: @unchecked Sendable {
                     return True
             return False
 
+        def metadata_search_match(item, query):
+            for field in (item.get("title"), item.get("preview"), item.get("id")):
+                snippet = search_snippet(field, query)
+                if snippet:
+                    return {
+                        "match_count": 1,
+                        "message_id": None,
+                        "role": None,
+                        "timestamp": None,
+                        "snippet": snippet,
+                    }
+            return None
+
+        def search_snippet(value, query, radius=80, limit=220):
+            text = sanitize_preview(searchable_text(value))
+            if not text:
+                return None
+
+            folded = text.casefold()
+            index = folded.find(query)
+            if index < 0:
+                return None
+
+            start = max(0, index - radius)
+            end = min(len(text), index + len(query) + radius)
+            snippet = text[start:end].strip()
+            if start > 0:
+                snippet = "..." + snippet
+            if end < len(text):
+                snippet = snippet + "..."
+            if len(snippet) > limit:
+                snippet = snippet[:limit - 3].rstrip() + "..."
+            return snippet
+
+        def searchable_text(value):
+            if value is None:
+                return None
+            if isinstance(value, (dict, list, tuple)):
+                return json.dumps(value, ensure_ascii=False)
+            return stringify(value)
+
+        def value_matches_query(value, query):
+            text = searchable_text(value)
+            if text is None:
+                return False
+            return query in text.casefold()
+
+        def escape_like_pattern(value):
+            return value.replace("\\\\", "\\\\\\\\").replace("%", "\\\\%").replace("_", "\\\\_")
+
+        def is_ascii_text(value):
+            try:
+                value.encode("ascii")
+                return True
+            except Exception:
+                return False
+
+        def role_priority(role):
+            normalized = normalize_search_text(role) or ""
+            if normalized in ("user", "assistant"):
+                return 0
+            if normalized == "system":
+                return 1
+            return 2
+
         def prune_metadata_value(value):
             if value is None:
                 return None
@@ -477,8 +561,14 @@ final class SessionBrowserService: @unchecked Sendable {
 
         def extract_record_content(record):
             content = record.get("content")
+            if content in (None, "") and record.get("text") is not None:
+                content = record.get("text")
+            if content in (None, "") and record.get("body") is not None:
+                content = record.get("body")
             if content in (None, "") and record.get("reasoning") is not None:
                 content = record.get("reasoning")
+            if content in (None, "") and record.get("reasoning_content") is not None:
+                content = record.get("reasoning_content")
             if content in (None, "") and record.get("tool_calls") is not None:
                 content = record.get("tool_calls")
 
@@ -489,6 +579,113 @@ final class SessionBrowserService: @unchecked Sendable {
                 return json.dumps(content, ensure_ascii=False)
 
             return stringify(content)
+
+        def choose_columns(columns, choices):
+            results = []
+            lowered = {column.lower(): column for column in columns}
+
+            for choice in choices:
+                exact = lowered.get(choice.lower())
+                if exact and exact not in results:
+                    results.append(exact)
+
+            for choice in choices:
+                needle = choice.lower()
+                for column in columns:
+                    if needle in column.lower() and column not in results:
+                        results.append(column)
+
+            return results
+
+        def extract_record_search_texts(record, context):
+            texts = []
+            seen = set()
+
+            def append(value):
+                text = searchable_text(value)
+                if text is None:
+                    return
+                if text in seen:
+                    return
+                seen.add(text)
+                texts.append(text)
+
+            display_content = extract_record_content(record)
+            append(display_content)
+
+            if display_content in (None, ""):
+                for column in context.get("message_search_columns") or []:
+                    append(record.get(column))
+
+            return texts
+
+        def build_sqlite_session_search_matches(context, query):
+            search_columns = context.get("message_search_columns") or []
+            if not search_columns:
+                return {}
+
+            search_sql = f"SELECT * FROM {quote_ident(context['message_table'])}"
+            args = ()
+            if is_ascii_text(query):
+                where = " OR ".join(
+                    f"CAST({quote_ident(column)} AS TEXT) COLLATE NOCASE LIKE ? ESCAPE '\\\\'"
+                    for column in search_columns
+                )
+                args = tuple([f"%{escape_like_pattern(query)}%"] * len(search_columns))
+                search_sql += f" WHERE {where}"
+
+            search_sql += " ORDER BY "
+            if context["message_timestamp_column"]:
+                search_sql += f"{quote_ident(context['message_timestamp_column'])}, "
+            search_sql += quote_ident(context["message_id_column"])
+            rows = context["connection"].execute(search_sql, args)
+
+            matches = {}
+            for row in rows:
+                record = dict(zip(context["message_columns"], row))
+                session_id = stringify(record.get(context["message_session_id_column"]))
+                if not session_id:
+                    continue
+
+                matched_text = None
+                for text in extract_record_search_texts(record, context):
+                    if value_matches_query(text, query):
+                        matched_text = text
+                        break
+
+                if matched_text is None:
+                    continue
+
+                role = stringify(record.get(context["message_role_column"])) if context["message_role_column"] else None
+                timestamp = normalize_json_value(record.get(context["message_timestamp_column"])) if context["message_timestamp_column"] else None
+                message_id = stringify(record.get(context["message_id_column"])) or None
+                snippet = search_snippet(matched_text, query)
+                priority = role_priority(role)
+
+                existing = matches.get(session_id)
+                if existing is None:
+                    matches[session_id] = {
+                        "match_count": 1,
+                        "message_id": message_id,
+                        "role": role,
+                        "timestamp": timestamp,
+                        "snippet": snippet,
+                        "_priority": priority,
+                    }
+                    continue
+
+                existing["match_count"] += 1
+                if priority < existing.get("_priority", 99):
+                    existing["message_id"] = message_id
+                    existing["role"] = role
+                    existing["timestamp"] = timestamp
+                    existing["snippet"] = snippet
+                    existing["_priority"] = priority
+
+            for match in matches.values():
+                match.pop("_priority", None)
+
+            return matches
 
         def discover_jsonl_artifacts():
             sessions_dir = resolved_hermes_home() / "sessions"
@@ -572,6 +769,14 @@ final class SessionBrowserService: @unchecked Sendable {
             message_role_column = choose_column(message_columns, ["role", "sender", "author"])
             message_content_column = choose_column(message_columns, ["content", "text", "body"])
             message_timestamp_column = choose_column(message_columns, ["timestamp", "created_at", "time"])
+            message_search_columns = choose_columns(message_columns, [
+                "content",
+                "text",
+                "body",
+                "reasoning",
+                "reasoning_content",
+                "tool_calls",
+            ])
 
             missing = [
                 name for name, value in [
@@ -602,9 +807,10 @@ final class SessionBrowserService: @unchecked Sendable {
                 "message_role_column": message_role_column,
                 "message_content_column": message_content_column,
                 "message_timestamp_column": message_timestamp_column,
+                "message_search_columns": message_search_columns,
             }
 
-        def build_jsonl_session_summaries():
+        def build_jsonl_session_summaries(search_query=None):
             items = []
 
             for path in discover_jsonl_artifacts():
@@ -614,6 +820,8 @@ final class SessionBrowserService: @unchecked Sendable {
                 preview = None
                 title = None
                 model = None
+                match_count = 0
+                best_match = None
 
                 try:
                     with path.open("r", encoding="utf-8") as handle:
@@ -631,6 +839,9 @@ final class SessionBrowserService: @unchecked Sendable {
                                 continue
 
                             role = stringify(record.get("role"))
+                            if role == "session_meta":
+                                continue
+
                             if model is None:
                                 model = extract_model_from_record(record)
                             timestamp = parse_timestamp_value(record.get("timestamp"))
@@ -640,18 +851,30 @@ final class SessionBrowserService: @unchecked Sendable {
                                 last_active = timestamp
 
                             content = sanitize_preview(extract_record_content(record))
-                            if role != "session_meta":
-                                message_count += 1
+                            message_count += 1
 
                             if preview is None and content:
                                 preview = content[:120]
 
                             if title is None and role in ("user", "assistant", "system") and content:
                                 title = sanitize_title(content[:80])
+
+                            if search_query is not None and value_matches_query(content, search_query):
+                                match_count += 1
+                                candidate_priority = role_priority(role)
+                                if best_match is None or candidate_priority < best_match["_priority"]:
+                                    best_match = {
+                                        "match_count": 0,
+                                        "message_id": str(message_count),
+                                        "role": role,
+                                        "timestamp": normalize_json_value(timestamp),
+                                        "snippet": search_snippet(content, search_query),
+                                        "_priority": candidate_priority,
+                                    }
                 except Exception:
                     continue
 
-                items.append({
+                item = {
                     "id": path.stem,
                     "title": title or path.stem,
                     "model": model,
@@ -659,7 +882,14 @@ final class SessionBrowserService: @unchecked Sendable {
                     "last_active": normalize_json_value(last_active or path.stat().st_mtime),
                     "message_count": message_count,
                     "preview": preview,
-                })
+                }
+
+                if best_match is not None:
+                    best_match["match_count"] = match_count
+                    best_match.pop("_priority", None)
+                    item["search_match"] = best_match
+
+                items.append(item)
 
             items.sort(key=lambda item: sort_key(item.get("last_active") or item.get("started_at")), reverse=True)
             return items

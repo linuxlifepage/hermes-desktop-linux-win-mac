@@ -368,6 +368,9 @@
 "Timezone" = "时区";
 "Transcript" = "记录";
 "Try searching by session name, ID, or preview text." = "尝试按会话名称、ID 或预览文本搜索。";
+"Try searching by session name, ID, preview text, or message content." = "尝试按会话名称、ID、预览文本或消息内容搜索。";
+"1 match" = "1 个匹配";
+"%@ matches" = "%@ 个匹配";
 "Try searching by title, schedule, skill, model, delivery target or prompt text." = "尝试按标题、计划、技能、模型、投递目标或 prompt 文本搜索。";
 "Unable to load cron jobs" = "无法加载定时任务";
 "Unable to load sessions" = "无法加载会话";
@@ -451,19 +454,13 @@
 "A valid schedule is required." = "需要有效的计划。";
 "%@ saved" = "%@ 已保存";
 "%@ added to Workspace Files" = "%@ 已添加到工作区文件";
-"%@ pinned" = "%@ 已固定";
-"%@ unpinned" = "%@ 已取消固定";
 "Bookmark removed" = "书签已移除";
 "Skill names must be comma-separated without embedded commas." = "技能名称必须用逗号分隔，名称内不能包含逗号。";
 "Task title is required." = "需要任务标题。";
 "Unpin session" = "取消固定会话";
 "Unable to browse remote files" = "无法浏览远端文件";
 "Unable to load session transcript" = "无法加载会话记录";
-"Starting Hermes session…" = "正在启动 Hermes 会话…";
-"Hermes session saved on the host" = "Hermes 会话已保存到主机";
 "Unable to start Hermes session" = "无法启动 Hermes 会话";
-"Sending prompt to Hermes…" = "正在向 Hermes 发送 prompt…";
-"Hermes response saved on the host" = "Hermes 回复已保存到主机";
 "Unable to send prompt to Hermes" = "无法向 Hermes 发送 prompt";
 "Session deleted locally and on the remote Hermes host" = "会话已从本地和远端 Hermes 主机删除";
 "Unable to delete session" = "无法删除会话";
@@ -523,6 +520,7 @@
 "Unable to delete Kanban task" = "无法删除 Kanban 任务";
 "Nudging Kanban dispatcher..." = "正在触发 Kanban 调度器...";
 "Kanban dispatcher nudged" = "Kanban 调度器已触发";
+"Kanban dispatch: %@ spawned, %@ promoted" = "Kanban 调度：已生成 %@，已提升 %@";
 "Unable to nudge Kanban dispatcher" = "无法触发 Kanban 调度器";
 "Customize terminal colors" = "自定义终端颜色";
 "Active %@" = "活跃 %@";

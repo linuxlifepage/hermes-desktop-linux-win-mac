@@ -528,14 +528,27 @@ final class KanbanBrowserService: @unchecked Sendable {
             fallback = pathlib.Path.home() / ".local" / "bin" / "hermes"
             if fallback.exists() and os.access(fallback, os.X_OK):
                 return str(fallback)
+            venv_fallback = pathlib.Path.home() / ".hermes" / "hermes-agent" / "venv" / "bin" / "hermes"
+            if venv_fallback.exists() and os.access(venv_fallback, os.X_OK):
+                return str(venv_fallback)
             return None
 
         def run_hermes_cli(args, expect_json=False):
             hermes_binary = find_hermes_binary()
             if hermes_binary is None:
                 fail("Hermes CLI was not found on the active host.")
+            home = pathlib.Path.home()
             env = os.environ.copy()
             env["HERMES_HOME"] = str(kanban_home_path())
+            path_entries = [
+                str(home / ".local" / "bin"),
+                str(home / ".hermes" / "hermes-agent" / "venv" / "bin"),
+                str(home / ".cargo" / "bin"),
+                "/opt/homebrew/bin",
+                "/usr/local/bin",
+                env.get("PATH", ""),
+            ]
+            env["PATH"] = os.pathsep.join([entry for entry in path_entries if entry])
             completed = subprocess.run(
                 [hermes_binary] + list(args),
                 capture_output=True,

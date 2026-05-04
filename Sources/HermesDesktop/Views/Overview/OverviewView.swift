@@ -4,7 +4,7 @@ struct OverviewView: View {
     @EnvironmentObject private var appState: AppState
 
     var body: some View {
-        ScrollView {
+        HermesPageContainer(width: .dashboard) {
             VStack(alignment: .leading, spacing: 24) {
                 header
 
@@ -29,10 +29,6 @@ struct OverviewView: View {
                     }
                 }
             }
-            .frame(maxWidth: 1080, alignment: .leading)
-            .padding(.horizontal, 28)
-            .padding(.vertical, 26)
-            .frame(maxWidth: .infinity, alignment: .top)
         }
         .task(id: appState.activeConnectionID) {
             if appState.overview == nil {
@@ -90,11 +86,12 @@ struct OverviewView: View {
                 workspaceFilesPanel(overview)
                     .frame(minWidth: 420, maxWidth: .infinity)
 
-                sessionHistoryPanel(overview)
-                    .frame(minWidth: 420, maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 16) {
+                    sessionHistoryPanel(overview)
+                    kanbanPanel(overview)
+                }
+                .frame(minWidth: 420, maxWidth: .infinity, alignment: .top)
             }
-
-            kanbanPanel(overview)
         }
     }
 
@@ -103,9 +100,9 @@ struct OverviewView: View {
             currentHostPanel(activeConnection)
             workspacePanel(overview)
             statusPanel(for: overview)
-            kanbanPanel(overview)
             workspaceFilesPanel(overview)
             sessionHistoryPanel(overview)
+            kanbanPanel(overview)
         }
     }
 

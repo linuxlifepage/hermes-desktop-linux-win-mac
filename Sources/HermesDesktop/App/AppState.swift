@@ -26,6 +26,7 @@ final class AppState: ObservableObject {
     @Published var hasMoreSessions = false
     @Published var totalSessionsCount = 0
     @Published private(set) var sessionSearchQuery = ""
+    @Published private(set) var sessionPinStateVersion = 0
     @Published var usageSummary: UsageSummary?
     @Published var usageProfileBreakdown: UsageProfileBreakdown?
     @Published var usageError: String?
@@ -82,6 +83,7 @@ final class AppState: ObservableObject {
 
     private let sessionPageSize = 50
     private var sessionOffset = 0
+    private var pendingSessionReloadQuery: String?
     private var sessionMessageSignature = SessionMessageSignature(messages: [])
     private var connectionTestRequestID: UUID?
     private var statusTask: Task<Void, Never>?
@@ -653,7 +655,7 @@ final class AppState: ObservableObject {
             session,
             workspaceScopeFingerprint: activeConnection.workspaceScopeFingerprint
         )
-        setStatusMessage(L10n.string("%@ pinned", session.resolvedTitle))
+        sessionPinStateVersion &+= 1
     }
 
     func unpinSession(_ session: SessionSummary) {
@@ -662,7 +664,7 @@ final class AppState: ObservableObject {
             id: session.id,
             workspaceScopeFingerprint: activeConnection.workspaceScopeFingerprint
         )
-        setStatusMessage(L10n.string("%@ unpinned", session.resolvedTitle))
+        sessionPinStateVersion &+= 1
     }
 
     func toggleSessionPin(_ session: SessionSummary) {
@@ -705,9 +707,16 @@ final class AppState: ObservableObject {
 
     func loadSessions(reset: Bool = false, query: String? = nil) async {
         guard let profile = activeConnection else { return }
-        if isLoadingSessions { return }
 
         let normalizedQuery = query?.trimmingCharacters(in: .whitespacesAndNewlines) ?? sessionSearchQuery
+        if isLoadingSessions {
+            if reset, query != nil {
+                sessionSearchQuery = normalizedQuery
+                pendingSessionReloadQuery = normalizedQuery
+            }
+            return
+        }
+
         let previousSelectedSessionID = selectedSessionID
 
         isLoadingSessions = true
@@ -763,6 +772,11 @@ final class AppState: ObservableObject {
             sessionsError = error.localizedDescription
             setStatusMessage(L10n.string("Unable to load sessions"))
         }
+
+        guard let queuedQuery = pendingSessionReloadQuery else { return }
+        pendingSessionReloadQuery = nil
+        guard queuedQuery != normalizedQuery else { return }
+        await loadSessions(reset: true, query: queuedQuery)
     }
 
     func loadSessionDetail(sessionID: String) async {
@@ -811,7 +825,6 @@ final class AppState: ObservableObject {
         )
         sessionConversationError = nil
         sessionsError = nil
-        setStatusMessage(L10n.string("Starting Hermes session…"))
 
         do {
             _ = try await hermesChatService.sendMessage(
@@ -825,7 +838,6 @@ final class AppState: ObservableObject {
             isSendingSessionMessage = false
             pendingSessionTurn = nil
             sessionSearchQuery = ""
-            setStatusMessage(L10n.string("Hermes session saved on the host"))
             await loadSessions(reset: true, query: "")
             return true
         } catch {
@@ -857,7 +869,6 @@ final class AppState: ObservableObject {
         sessionConversationError = nil
         sessionsError = nil
         startSessionTranscriptPolling(sessionID: selectedSessionID, connection: profile)
-        setStatusMessage(L10n.string("Sending prompt to Hermes…"))
 
         do {
             _ = try await hermesChatService.sendMessage(
@@ -874,7 +885,6 @@ final class AppState: ObservableObject {
             }
             isSendingSessionMessage = false
             pendingSessionTurn = nil
-            setStatusMessage(L10n.string("Hermes response saved on the host"))
             await loadSessions(reset: true, query: sessionSearchQuery)
             return true
         } catch {
@@ -1889,6 +1899,7 @@ final class AppState: ObservableObject {
             sessionsError = nil
             isLoadingSessions = false
             isRefreshingSessions = false
+            pendingSessionReloadQuery = nil
             isSendingSessionMessage = false
             sessionConversationError = nil
             pendingSessionTurn = nil
@@ -1954,6 +1965,7 @@ final class AppState: ObservableObject {
         totalSessionsCount = 0
         selectedSessionID = nil
         sessionOffset = 0
+        pendingSessionReloadQuery = nil
         sessionSearchQuery = ""
         usageSummary = nil
         usageProfileBreakdown = nil

@@ -83,30 +83,15 @@ struct KanbanView: View {
     }
 
     private var filterBar: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
+        HermesSearchActionBar(
+            text: $searchText,
+            prompt: "Search tasks",
+            expandedWidth: 220
+        ) {
+            HermesWrappingFlowLayout(horizontalSpacing: 10, verticalSpacing: 8) {
                 filterControls
-
-                Spacer(minLength: 12)
-
-                searchField
-                    .frame(width: 220, alignment: .trailing)
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                HermesWrappingFlowLayout(horizontalSpacing: 10, verticalSpacing: 8) {
-                    filterControls
-                }
-
-                HStack {
-                    Spacer(minLength: 0)
-
-                    searchField
-                        .frame(width: 220, alignment: .trailing)
-                }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -152,14 +137,6 @@ struct KanbanView: View {
             .font(.caption.weight(.semibold))
             .foregroundStyle(.secondary)
             .fixedSize()
-    }
-
-    private var searchField: some View {
-        HermesExpandableSearchField(
-            text: $searchText,
-            prompt: "Search tasks",
-            expandedWidth: 220
-        )
     }
 
     @ViewBuilder

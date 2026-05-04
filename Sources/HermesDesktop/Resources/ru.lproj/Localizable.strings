@@ -368,6 +368,9 @@
 "Timezone" = "Часовой пояс";
 "Transcript" = "Transcript";
 "Try searching by session name, ID, or preview text." = "Попробуйте поиск по имени сеанса, ID или тексту предпросмотра.";
+"Try searching by session name, ID, preview text, or message content." = "Попробуйте поиск по имени сеанса, ID, тексту предпросмотра или содержимому сообщений.";
+"1 match" = "1 совпадение";
+"%@ matches" = "%@ совпадений";
 "Try searching by title, schedule, skill, model, delivery target or prompt text." = "Попробуйте поиск по названию, расписанию, навыку, модели, цели доставки или тексту prompt.";
 "Unable to load cron jobs" = "Не удалось загрузить cron-задания";
 "Unable to load sessions" = "Не удалось загрузить сеансы";
@@ -451,19 +454,13 @@
 "A valid schedule is required." = "Требуется корректное расписание.";
 "%@ saved" = "%@ сохранен";
 "%@ added to Workspace Files" = "%@ добавлен в файлы рабочей области";
-"%@ pinned" = "%@ закреплен";
-"%@ unpinned" = "%@ откреплен";
 "Bookmark removed" = "Закладка удалена";
 "Skill names must be comma-separated without embedded commas." = "Имена навыков должны разделяться запятыми без запятых внутри имени.";
 "Task title is required." = "Требуется название задачи.";
 "Unpin session" = "Открепить сеанс";
 "Unable to browse remote files" = "Не удалось просмотреть удаленные файлы";
 "Unable to load session transcript" = "Не удалось загрузить transcript сеанса";
-"Starting Hermes session…" = "Запуск сеанса Hermes…";
-"Hermes session saved on the host" = "Сеанс Hermes сохранен на хосте";
 "Unable to start Hermes session" = "Не удалось запустить сеанс Hermes";
-"Sending prompt to Hermes…" = "Отправка prompt в Hermes…";
-"Hermes response saved on the host" = "Ответ Hermes сохранен на хосте";
 "Unable to send prompt to Hermes" = "Не удалось отправить prompt в Hermes";
 "Session deleted locally and on the remote Hermes host" = "Сеанс удален локально и на удаленном хосте Hermes";
 "Unable to delete session" = "Не удалось удалить сеанс";
@@ -523,6 +520,7 @@
 "Unable to delete Kanban task" = "Не удалось удалить Kanban-задачу";
 "Nudging Kanban dispatcher..." = "Запуск диспетчера Kanban...";
 "Kanban dispatcher nudged" = "Диспетчер Kanban запущен";
+"Kanban dispatch: %@ spawned, %@ promoted" = "Kanban dispatch: создано %@, повышено %@";
 "Unable to nudge Kanban dispatcher" = "Не удалось запустить диспетчер Kanban";
 "Customize terminal colors" = "Настроить цвета терминала";
 "Active %@" = "Активно %@";
