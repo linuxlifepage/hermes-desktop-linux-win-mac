@@ -24,10 +24,19 @@ struct CronJobsView: View {
                     title: "Cron Jobs",
                     subtitle: "Browse, create and maintain Hermes jobs discovered on the active host."
                 ) {
-                    HermesRefreshButton(isRefreshing: appState.isRefreshingCronJobs) {
-                        Task { await appState.refreshCronJobs() }
+                    HStack(spacing: 10) {
+                        HermesRefreshButton(isRefreshing: appState.isRefreshingCronJobs) {
+                            Task { await appState.refreshCronJobs() }
+                        }
+                        .disabled(appState.isLoadingCronJobs || appState.isSavingCronJobDraft)
+
+                        HermesExpandableSearchField(
+                            text: $searchText,
+                            prompt: L10n.string("Search jobs"),
+                            expandedWidth: 220
+                        )
                     }
-                    .disabled(appState.isLoadingCronJobs || appState.isSavingCronJobDraft)
+                    .fixedSize(horizontal: true, vertical: false)
                 }
 
                 filterBar
@@ -63,30 +72,27 @@ struct CronJobsView: View {
     }
 
     private var filterBar: some View {
-        HermesSearchActionBar(
-            text: $searchText,
-            prompt: "Search jobs"
-        ) {
-            HStack(spacing: 10) {
-                Picker("Filter", selection: $filterMode) {
-                    ForEach(CronFilterMode.allCases, id: \.self) { mode in
-                        Text(L10n.string(mode.rawValue)).tag(mode)
-                    }
+        HStack(spacing: 10) {
+            Picker("Filter", selection: $filterMode) {
+                ForEach(CronFilterMode.allCases, id: \.self) { mode in
+                    Text(L10n.string(mode.rawValue)).tag(mode)
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 180)
-
-                Button {
-                    startCreating()
-                } label: {
-                    Label(L10n.string("New"), systemImage: "plus")
-                        .labelStyle(.iconOnly)
-                }
-                .buttonStyle(.borderedProminent)
-                .help(L10n.string("Create a new cron job"))
-                .disabled(appState.isSavingCronJobDraft || appState.isOperatingOnCronJob)
             }
+            .pickerStyle(.segmented)
+            .frame(width: 180)
+
+            Button {
+                startCreating()
+            } label: {
+                Label(L10n.string("New"), systemImage: "plus")
+                    .labelStyle(.iconOnly)
+            }
+            .buttonStyle(.borderedProminent)
+            .help(L10n.string("Create a new cron job"))
+            .disabled(appState.isSavingCronJobDraft || appState.isOperatingOnCronJob)
         }
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder

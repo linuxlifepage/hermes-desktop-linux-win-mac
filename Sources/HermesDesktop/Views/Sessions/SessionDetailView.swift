@@ -473,7 +473,7 @@ private struct SessionComposerPanel: View {
                 promptEditor(
                     placeholderText: usesExpandedEditor ? L10n.string(placeholder) : compactPlaceholder,
                     height: usesExpandedEditor ? expandedPromptHeight : compactPromptHeight,
-                    placeholderPadding: usesExpandedEditor
+                    contentPadding: usesExpandedEditor
                         ? EdgeInsets(
                             top: expandedPromptTopInset,
                             leading: expandedPromptHorizontalInset,
@@ -483,19 +483,6 @@ private struct SessionComposerPanel: View {
                         : EdgeInsets(
                             top: compactPromptTopInset,
                             leading: compactPromptLeadingInset,
-                            bottom: 0,
-                            trailing: 0
-                        ),
-                    editorPadding: usesExpandedEditor
-                        ? EdgeInsets(
-                            top: expandedPromptTopInset - 5,
-                            leading: expandedPromptHorizontalInset - 5,
-                            bottom: 0,
-                            trailing: expandedPromptHorizontalInset - 5
-                        )
-                        : EdgeInsets(
-                            top: compactPromptTopInset - 5,
-                            leading: compactPromptLeadingInset - 5,
                             bottom: 0,
                             trailing: 0
                         ),
@@ -545,8 +532,7 @@ private struct SessionComposerPanel: View {
     private func promptEditor(
         placeholderText: String,
         height: CGFloat,
-        placeholderPadding: EdgeInsets,
-        editorPadding: EdgeInsets,
+        contentPadding: EdgeInsets,
         showsEditorBackground: Bool
     ) -> some View {
         ZStack(alignment: .topLeading) {
@@ -555,31 +541,15 @@ private struct SessionComposerPanel: View {
                     .fill(Color.secondary.opacity(0.08))
             }
 
-            if draft.isEmpty {
-                Text(placeholderText)
-                    .font(.body)
-                    .foregroundStyle(.tertiary)
-                    .padding(placeholderPadding)
-                    .frame(height: height, alignment: .topLeading)
-                    .allowsHitTesting(false)
-            }
-
-            TextEditor(text: $draft)
-                .font(.body)
-                .textEditorStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .focused($isEditorFocused)
-                .padding(editorPadding)
+            SessionPromptTextView(
+                text: $draft,
+                placeholder: placeholderText,
+                isFocused: $isEditorFocused,
+                isDisabled: isSending,
+                onCommandReturn: submit
+            )
+                .padding(contentPadding)
                 .frame(height: height)
-                .disabled(isSending)
-                .onKeyPress(.return, phases: .down) { press in
-                    guard press.modifiers.contains(.command) else {
-                        return .ignored
-                    }
-
-                    submit()
-                    return .handled
-                }
         }
         .overlay {
             if showsEditorBackground {
@@ -687,6 +657,152 @@ private struct SessionComposerPanel: View {
             .split(whereSeparator: \.isWhitespace)
             .map(\.count)
             .max() ?? 0
+    }
+}
+
+private struct SessionPromptTextView: NSViewRepresentable {
+    @Binding var text: String
+
+    let placeholder: String
+    let isFocused: FocusState<Bool>.Binding
+    let isDisabled: Bool
+    let onCommandReturn: () -> Void
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasHorizontalScroller = false
+        scrollView.hasVerticalScroller = false
+        scrollView.autohidesScrollers = true
+
+        let textView = PlaceholderCommandTextView()
+        textView.placeholder = placeholder
+        textView.commandReturnAction = onCommandReturn
+        textView.delegate = context.coordinator
+        textView.drawsBackground = false
+        textView.isRichText = false
+        textView.importsGraphics = false
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.allowsUndo = true
+        textView.font = .systemFont(ofSize: NSFont.systemFontSize)
+        textView.textColor = .labelColor
+        textView.insertionPointColor = .controlAccentColor
+        textView.textContainerInset = .zero
+        textView.textContainer?.lineFragmentPadding = 0
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.heightTracksTextView = false
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+        textView.minSize = .zero
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.autoresizingMask = [.width]
+        textView.string = text
+
+        scrollView.documentView = textView
+        context.coordinator.textView = textView
+        configure(textView)
+
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        context.coordinator.parent = self
+
+        guard let textView = scrollView.documentView as? PlaceholderCommandTextView else { return }
+
+        if textView.string != text {
+            textView.string = text
+        }
+
+        textView.placeholder = placeholder
+        textView.commandReturnAction = onCommandReturn
+        configure(textView)
+        updateFocus(for: textView)
+        textView.needsDisplay = true
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    private func configure(_ textView: PlaceholderCommandTextView) {
+        textView.isEditable = !isDisabled
+        textView.isSelectable = !isDisabled
+        textView.alphaValue = isDisabled ? 0.62 : 1
+    }
+
+    private func updateFocus(for textView: NSTextView) {
+        guard let window = textView.window else { return }
+
+        if isFocused.wrappedValue {
+            if window.firstResponder !== textView {
+                DispatchQueue.main.async {
+                    textView.window?.makeFirstResponder(textView)
+                }
+            }
+        } else if window.firstResponder === textView {
+            DispatchQueue.main.async {
+                textView.window?.makeFirstResponder(nil)
+            }
+        }
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: SessionPromptTextView
+        weak var textView: PlaceholderCommandTextView?
+
+        init(parent: SessionPromptTextView) {
+            self.parent = parent
+        }
+
+        func textDidBeginEditing(_ notification: Notification) {
+            parent.isFocused.wrappedValue = true
+        }
+
+        func textDidEndEditing(_ notification: Notification) {
+            parent.isFocused.wrappedValue = false
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? PlaceholderCommandTextView else { return }
+            parent.text = textView.string
+            textView.needsDisplay = true
+        }
+    }
+}
+
+private final class PlaceholderCommandTextView: NSTextView {
+    var placeholder = "" {
+        didSet {
+            needsDisplay = true
+        }
+    }
+
+    var commandReturnAction: (() -> Void)?
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+
+        guard string.isEmpty, !placeholder.isEmpty else { return }
+
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize),
+            .foregroundColor: NSColor.tertiaryLabelColor
+        ]
+        NSAttributedString(string: placeholder, attributes: attributes)
+            .draw(at: textContainerOrigin)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.command), event.charactersIgnoringModifiers == "\r" {
+            commandReturnAction?()
+            return
+        }
+
+        super.keyDown(with: event)
     }
 }
 

@@ -1,10 +1,21 @@
 import SwiftUI
 
+private let workbenchPrimaryColumnWidth: CGFloat = 460
+
 struct RootView: View {
     @EnvironmentObject private var appState: AppState
-    @State private var sessionsSplitLayout = HermesSplitLayout(minPrimaryWidth: 300, defaultPrimaryWidth: 340)
-    @State private var cronJobsSplitLayout = HermesSplitLayout(minPrimaryWidth: 300, defaultPrimaryWidth: 360)
-    @State private var kanbanSplitLayout = HermesSplitLayout(minPrimaryWidth: 360, defaultPrimaryWidth: 620, maxPrimaryWidth: 900)
+    @State private var sessionsSplitLayout = HermesSplitLayout(
+        minPrimaryWidth: workbenchPrimaryColumnWidth,
+        defaultPrimaryWidth: workbenchPrimaryColumnWidth
+    )
+    @State private var cronJobsSplitLayout = HermesSplitLayout(
+        minPrimaryWidth: workbenchPrimaryColumnWidth,
+        defaultPrimaryWidth: workbenchPrimaryColumnWidth
+    )
+    @State private var kanbanSplitLayout = HermesSplitLayout(
+        minPrimaryWidth: workbenchPrimaryColumnWidth,
+        defaultPrimaryWidth: workbenchPrimaryColumnWidth
+    )
     @State private var filesSplitLayout = HermesSplitLayout(minPrimaryWidth: 300, defaultPrimaryWidth: 360)
     @State private var skillsSplitLayout = HermesSplitLayout(minPrimaryWidth: 300, defaultPrimaryWidth: 340)
 

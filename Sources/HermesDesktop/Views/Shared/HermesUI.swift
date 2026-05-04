@@ -68,20 +68,13 @@ struct HermesPageHeader<Accessory: View>: View {
     }
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .top, spacing: 20) {
-                titleBlock
-
-                Spacer(minLength: 16)
-
-                accessory
-            }
-
-            VStack(alignment: .leading, spacing: 12) {
-                titleBlock
-                accessory
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+        HermesAdaptivePairLayout(
+            horizontalSpacing: 20,
+            verticalSpacing: 12,
+            minimumPrimaryWidth: 260
+        ) {
+            titleBlock
+            accessory
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
@@ -99,6 +92,126 @@ struct HermesPageHeader<Accessory: View>: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+private struct HermesAdaptivePairLayout: Layout {
+    let horizontalSpacing: CGFloat
+    let verticalSpacing: CGFloat
+    var minimumPrimaryWidth: CGFloat?
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout Void
+    ) -> CGSize {
+        guard subviews.count >= 2 else {
+            return subviews.first?.sizeThatFits(proposal) ?? .zero
+        }
+
+        let availableWidth = proposal.width ?? .greatestFiniteMagnitude
+        let primaryIdealSize = subviews[0].sizeThatFits(.unspecified)
+        let secondarySize = subviews[1].sizeThatFits(.unspecified)
+
+        if usesHorizontalLayout(
+            availableWidth: availableWidth,
+            primaryIdealWidth: primaryIdealSize.width,
+            secondaryWidth: secondarySize.width
+        ) {
+            let primaryWidth = horizontalPrimaryWidth(
+                availableWidth: availableWidth,
+                primaryIdealWidth: primaryIdealSize.width,
+                secondaryWidth: secondarySize.width
+            )
+            let primarySize = subviews[0].sizeThatFits(ProposedViewSize(width: primaryWidth, height: nil))
+            let width = proposal.width ?? primarySize.width + horizontalSpacing + secondarySize.width
+
+            return CGSize(
+                width: width,
+                height: max(primarySize.height, secondarySize.height)
+            )
+        }
+
+        let primarySize = subviews[0].sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        let secondaryConstrainedSize = subviews[1].sizeThatFits(ProposedViewSize(width: proposal.width, height: nil))
+        let width = proposal.width ?? max(primarySize.width, secondaryConstrainedSize.width)
+
+        return CGSize(
+            width: width,
+            height: primarySize.height + verticalSpacing + secondaryConstrainedSize.height
+        )
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout Void
+    ) {
+        guard subviews.count >= 2 else {
+            subviews.first?.place(
+                at: bounds.origin,
+                proposal: ProposedViewSize(width: bounds.width, height: bounds.height)
+            )
+            return
+        }
+
+        let primaryIdealSize = subviews[0].sizeThatFits(.unspecified)
+        let secondarySize = subviews[1].sizeThatFits(.unspecified)
+
+        if usesHorizontalLayout(
+            availableWidth: bounds.width,
+            primaryIdealWidth: primaryIdealSize.width,
+            secondaryWidth: secondarySize.width
+        ) {
+            let primaryWidth = horizontalPrimaryWidth(
+                availableWidth: bounds.width,
+                primaryIdealWidth: primaryIdealSize.width,
+                secondaryWidth: secondarySize.width
+            )
+            let primarySize = subviews[0].sizeThatFits(ProposedViewSize(width: primaryWidth, height: nil))
+
+            subviews[0].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY),
+                proposal: ProposedViewSize(width: primaryWidth, height: primarySize.height)
+            )
+            subviews[1].place(
+                at: CGPoint(x: bounds.maxX - secondarySize.width, y: bounds.minY),
+                proposal: ProposedViewSize(width: secondarySize.width, height: secondarySize.height)
+            )
+        } else {
+            let primarySize = subviews[0].sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+            let secondarySize = subviews[1].sizeThatFits(ProposedViewSize(width: bounds.width, height: nil))
+
+            subviews[0].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY),
+                proposal: ProposedViewSize(width: bounds.width, height: primarySize.height)
+            )
+            subviews[1].place(
+                at: CGPoint(x: bounds.minX, y: bounds.minY + primarySize.height + verticalSpacing),
+                proposal: ProposedViewSize(width: bounds.width, height: secondarySize.height)
+            )
+        }
+    }
+
+    private func usesHorizontalLayout(
+        availableWidth: CGFloat,
+        primaryIdealWidth: CGFloat,
+        secondaryWidth: CGFloat
+    ) -> Bool {
+        guard availableWidth.isFinite else { return true }
+
+        let requiredPrimaryWidth = minimumPrimaryWidth ?? primaryIdealWidth
+        return availableWidth >= requiredPrimaryWidth + horizontalSpacing + secondaryWidth
+    }
+
+    private func horizontalPrimaryWidth(
+        availableWidth: CGFloat,
+        primaryIdealWidth: CGFloat,
+        secondaryWidth: CGFloat
+    ) -> CGFloat {
+        guard availableWidth.isFinite else { return primaryIdealWidth }
+        return max(0, availableWidth - horizontalSpacing - secondaryWidth)
     }
 }
 
@@ -440,21 +553,12 @@ struct HermesSearchActionBar<LeadingContent: View>: View {
     }
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 10) {
-                leadingContent
-
-                Spacer(minLength: 12)
-
-                searchField
-            }
-
-            VStack(alignment: .leading, spacing: 10) {
-                leadingContent
-
-                searchField
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
+        HermesAdaptivePairLayout(
+            horizontalSpacing: 12,
+            verticalSpacing: 10
+        ) {
+            leadingContent
+            searchField
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -675,6 +779,7 @@ struct HermesPersistentHSplitView<Primary: View, Detail: View>: NSViewRepresenta
             let currentPrimaryWidth = splitView.subviews[0].frame.width
             let currentDetailWidth = splitView.subviews[1].frame.width
             let shouldProtectDetail = currentDetailWidth + 1 < detailMinWidth
+            let minimumPrimaryWidth = layout.wrappedValue.minPrimaryWidth
 
             if let autoConstrainedPrimaryWidth,
                !shouldProtectDetail,
@@ -696,7 +801,7 @@ struct HermesPersistentHSplitView<Primary: View, Detail: View>: NSViewRepresenta
             }
 
             let targetPrimaryWidth = shouldProtectDetail
-                ? min(currentPrimaryWidth, preferredPrimaryWidth)
+                ? max(minimumPrimaryWidth, min(currentPrimaryWidth, preferredPrimaryWidth))
                 : preferredPrimaryWidth
 
             guard abs(currentPrimaryWidth - targetPrimaryWidth) > 1 else {
@@ -723,17 +828,14 @@ struct HermesPersistentHSplitView<Primary: View, Detail: View>: NSViewRepresenta
 
         private func effectivePrimaryMinimum(in splitView: NSSplitView) -> CGFloat? {
             guard let layout else { return nil }
-            guard let upperBound = primaryUpperBound(in: splitView) else {
-                return layout.wrappedValue.minPrimaryWidth
-            }
-
-            return min(layout.wrappedValue.minPrimaryWidth, upperBound)
+            return layout.wrappedValue.minPrimaryWidth
         }
 
         private func primaryUpperBound(in splitView: NSSplitView) -> CGFloat? {
             guard let layout else { return nil }
             let availableBeforeDetail = splitView.bounds.width - detailMinWidth - splitView.dividerThickness
-            return max(0, min(layout.wrappedValue.maxPrimaryWidth, availableBeforeDetail))
+            let hardLowerBound = layout.wrappedValue.minPrimaryWidth
+            return min(layout.wrappedValue.maxPrimaryWidth, max(hardLowerBound, availableBeforeDetail))
         }
     }
 }

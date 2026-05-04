@@ -11,7 +11,21 @@ struct SessionsView: View {
                 HermesPageHeader(
                     title: "Sessions",
                     subtitle: "Browse the recent Hermes conversations discovered on the active host."
-                )
+                ) {
+                    HStack(spacing: 10) {
+                        HermesRefreshButton(isRefreshing: appState.isRefreshingSessions) {
+                            Task { await appState.refreshSessions(query: searchText) }
+                        }
+                        .disabled(appState.isLoadingSessions)
+
+                        HermesExpandableSearchField(
+                            text: $searchText,
+                            prompt: L10n.string("Search sessions"),
+                            expandedWidth: 220
+                        )
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                }
 
                 sessionsToolbar
                 sessionsContent
@@ -185,10 +199,12 @@ struct SessionsView: View {
     }
 
     private func sessionRow(_ session: SessionSummary) -> some View {
-        SessionCardRow(
+        let isPinned = appState.isSessionPinned(session.id)
+
+        return SessionCardRow(
             session: session,
             isSelected: session.id == appState.selectedSessionID,
-            isPinned: appState.isSessionPinned(session.id),
+            isPinned: isPinned,
             onTogglePin: {
                 appState.toggleSessionPin(session)
             }
@@ -197,29 +213,24 @@ struct SessionsView: View {
                 await appState.loadSessionDetail(sessionID: session.id)
             }
         }
+        // Rows move between two LazyVStack sections when pinned. Include the pin state
+        // in the row identity so the pin button subtree is rebuilt with the move.
+        .id(SessionCardRowIdentity(sessionID: session.id, isPinned: isPinned))
     }
 
     private var sessionsToolbar: some View {
-        HermesSearchActionBar(
-            text: $searchText,
-            prompt: "Search sessions"
-        ) {
-            HStack(spacing: 10) {
-                Button {
-                    searchText = ""
-                    appState.prepareNewSessionComposer()
-                } label: {
-                    Label(L10n.string("New Chat"), systemImage: "plus")
-                }
-                .buttonStyle(.bordered)
-                .disabled(appState.isSendingSessionMessage)
-
-                HermesRefreshButton(isRefreshing: appState.isRefreshingSessions) {
-                    Task { await appState.refreshSessions(query: searchText) }
-                }
-                .disabled(appState.isLoadingSessions)
+        HStack(spacing: 10) {
+            Button {
+                searchText = ""
+                appState.prepareNewSessionComposer()
+            } label: {
+                Label(L10n.string("New Chat"), systemImage: "plus")
             }
+            .buttonStyle(.bordered)
+            .disabled(appState.isSendingSessionMessage)
         }
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var panelTitle: String {
@@ -234,6 +245,11 @@ struct SessionsView: View {
         guard let selectedSessionID = appState.selectedSessionID else { return nil }
         return appState.sessionSummary(for: selectedSessionID)
     }
+}
+
+private struct SessionCardRowIdentity: Hashable {
+    let sessionID: String
+    let isPinned: Bool
 }
 
 private struct SessionSectionHeader: View {

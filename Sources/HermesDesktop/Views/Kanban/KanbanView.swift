@@ -13,18 +13,7 @@ struct KanbanView: View {
 
     var body: some View {
         HermesPersistentHSplitView(layout: $splitLayout, detailMinWidth: 420) {
-            VStack(alignment: .leading, spacing: 18) {
-                HermesPageHeader(
-                    title: "Kanban",
-                    subtitle: "Inspect and operate the host-wide Hermes Kanban board over SSH."
-                )
-
-                commandBar
-                boardContent
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 20)
+            primaryContent
         } detail: {
             detailContent
                 .hermesSplitDetailColumn(minWidth: 420, idealWidth: 560)
@@ -45,214 +34,168 @@ struct KanbanView: View {
         }
     }
 
-    private var commandBar: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ViewThatFits(in: .horizontal) {
-                HStack(alignment: .center, spacing: 12) {
-                    actionStrip
+    private var primaryContent: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HermesPageHeader(
+                title: "Kanban",
+                subtitle: "Inspect and operate the host-wide Hermes Kanban board over SSH."
+            ) {
+                HStack(spacing: 10) {
+                    HermesRefreshButton(isRefreshing: appState.isRefreshingKanbanBoard) {
+                        Task { await appState.refreshKanbanBoard() }
+                    }
+                    .disabled(appState.isLoadingKanbanBoard || appState.isSavingKanbanTaskDraft)
 
-                    Spacer(minLength: 16)
-
-                    searchField
+                    HermesExpandableSearchField(
+                        text: $searchText,
+                        prompt: L10n.string("Search tasks"),
+                        expandedWidth: 220
+                    )
                 }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    actionStrip
-                    searchField
-                }
+                .fixedSize(horizontal: true, vertical: false)
             }
 
-            Divider()
-                .opacity(0.45)
-
-            HermesWrappingFlowLayout(horizontalSpacing: 8, verticalSpacing: 8) {
-                filterControls
-            }
+            kanbanToolbar
+            boardContent
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.secondary.opacity(0.055))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.075), lineWidth: 1)
-        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 20)
     }
 
-    private var actionStrip: some View {
+    private var kanbanToolbar: some View {
         HStack(spacing: 8) {
-            Button {
-                taskDraft = KanbanTaskDraft()
-                isCreatingTask = true
-            } label: {
-                Label(L10n.string("Create Task"), systemImage: "plus")
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            .help(L10n.string("Create a Kanban task"))
-            .disabled(appState.isSavingKanbanTaskDraft || appState.isOperatingOnKanbanTask)
+            statusPicker
+            createTaskButton
+            dispatchButton
+            advancedFilterMenu
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
-            Button {
-                Task { await appState.dispatchKanbanNow() }
-            } label: {
-                if appState.isDispatchingKanban {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
+    private var statusPicker: some View {
+        HStack(spacing: 6) {
+            Text(L10n.string("Status"))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
 
-                        Text(L10n.string("Dispatch"))
-                    }
-                } else {
-                    Label(L10n.string("Dispatch"), systemImage: "paperplane")
+            Picker("", selection: $statusFilter) {
+                ForEach(KanbanStatusFilter.allCases, id: \.self) { option in
+                    Text(L10n.string(option.title)).tag(option)
                 }
             }
-            .buttonStyle(.bordered)
+            .labelsHidden()
+            .pickerStyle(.menu)
             .controlSize(.small)
-            .help(L10n.string("Nudge the remote Kanban dispatcher once"))
-            .disabled(appState.isDispatchingKanban || appState.isLoadingKanbanBoard)
-
-            Button {
-                Task { await appState.refreshKanbanBoard() }
-            } label: {
-                if appState.isRefreshingKanbanBoard {
-                    HStack(spacing: 6) {
-                        ProgressView()
-                            .controlSize(.small)
-
-                        Text(L10n.string("Refreshing…"))
-                    }
-                } else {
-                    Label(L10n.string("Refresh"), systemImage: "arrow.clockwise")
-                }
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(appState.isLoadingKanbanBoard || appState.isSavingKanbanTaskDraft || appState.isRefreshingKanbanBoard)
+            .frame(width: 112)
         }
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    private var searchField: some View {
-        HermesExpandableSearchField(
-            text: $searchText,
-            prompt: L10n.string("Search tasks"),
-            expandedWidth: 240
-        )
+    private var createTaskButton: some View {
+        Button {
+            taskDraft = KanbanTaskDraft()
+            isCreatingTask = true
+        } label: {
+            Label(L10n.string("Create Task"), systemImage: "plus")
+                .labelStyle(.iconOnly)
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.small)
+        .help(L10n.string("Create a Kanban task"))
+        .disabled(appState.isSavingKanbanTaskDraft || appState.isOperatingOnKanbanTask)
     }
 
-    @ViewBuilder
-    private var filterControls: some View {
-        KanbanFilterMenu(
-            label: "Status",
-            value: statusFilter.title,
-            isActive: statusFilter != .all
-        ) {
-            ForEach(KanbanStatusFilter.allCases, id: \.self) { option in
-                Button {
-                    statusFilter = option
-                } label: {
-                    if option == statusFilter {
-                        Label(L10n.string(option.title), systemImage: "checkmark")
-                    } else {
-                        Text(L10n.string(option.title))
-                    }
-                }
+    private var dispatchButton: some View {
+        Button {
+            Task { await appState.dispatchKanbanNow() }
+        } label: {
+            if appState.isDispatchingKanban {
+                ProgressView()
+                    .controlSize(.small)
+                    .frame(width: 14, height: 14)
+            } else {
+                Label(L10n.string("Dispatch"), systemImage: "paperplane")
+                    .labelStyle(.iconOnly)
             }
         }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .help(L10n.string("Nudge the remote Kanban dispatcher once"))
+        .disabled(appState.isDispatchingKanban || appState.isLoadingKanbanBoard)
+    }
 
-        KanbanFilterMenu(
-            label: "Assignee",
-            value: assigneeFilter == .all ? "All assignees" : assigneeFilter.displayTitle,
-            isActive: assigneeFilter != .all
-        ) {
-            Button {
-                assigneeFilter = .all
-            } label: {
-                if assigneeFilter == .all {
-                    Label(L10n.string("All assignees"), systemImage: "checkmark")
-                } else {
-                    Text(L10n.string("All assignees"))
+    private var advancedFilterMenu: some View {
+        Menu {
+            Section {
+                Button {
+                    assigneeFilter = .all
+                } label: {
+                    menuLabel("All assignees", isSelected: assigneeFilter == .all)
                 }
-            }
-
-            if !assigneeOptions.isEmpty {
-                Divider()
 
                 ForEach(assigneeOptions, id: \.self) { assignee in
                     Button {
                         assigneeFilter = .value(assignee)
                     } label: {
-                        if assigneeFilter == .value(assignee) {
-                            Label(assignee, systemImage: "checkmark")
-                        } else {
-                            Text(assignee)
-                        }
+                        menuLabel(assignee, isSelected: assigneeFilter == .value(assignee), shouldLocalize: false)
                     }
                 }
+            } header: {
+                Text(L10n.string("Assignee"))
             }
-        }
 
-        KanbanFilterMenu(
-            label: "Tenant",
-            value: tenantFilter == .all ? "All tenants" : tenantFilter.displayTitle,
-            isActive: tenantFilter != .all,
-            isDisabled: tenantOptions.isEmpty
-        ) {
-            Button {
-                tenantFilter = .all
-            } label: {
-                if tenantFilter == .all {
-                    Label(L10n.string("All tenants"), systemImage: "checkmark")
-                } else {
-                    Text(L10n.string("All tenants"))
+            Section {
+                Button {
+                    tenantFilter = .all
+                } label: {
+                    menuLabel("All tenants", isSelected: tenantFilter == .all)
                 }
-            }
-
-            if !tenantOptions.isEmpty {
-                Divider()
 
                 ForEach(tenantOptions, id: \.self) { tenant in
                     Button {
                         tenantFilter = .value(tenant)
                     } label: {
-                        if tenantFilter == .value(tenant) {
-                            Label(tenant, systemImage: "checkmark")
-                        } else {
-                            Text(tenant)
-                        }
+                        menuLabel(tenant, isSelected: tenantFilter == .value(tenant), shouldLocalize: false)
                     }
                 }
+            } header: {
+                Text(L10n.string("Tenant"))
             }
-        }
 
-        Button {
-            appState.includeArchivedKanbanTasks.toggle()
+            Divider()
+
+            Button {
+                appState.includeArchivedKanbanTasks.toggle()
+            } label: {
+                menuLabel("Archived", isSelected: appState.includeArchivedKanbanTasks)
+            }
         } label: {
-            HStack(spacing: 7) {
-                Image(systemName: appState.includeArchivedKanbanTasks ? "archivebox.fill" : "archivebox")
-                    .font(.caption.weight(.semibold))
-
-                Text(L10n.string("Archived"))
-                    .font(.caption.weight(.semibold))
-            }
-            .foregroundStyle(appState.includeArchivedKanbanTasks ? Color.accentColor : Color.secondary)
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(
-                Capsule()
-                    .fill(appState.includeArchivedKanbanTasks ? Color.accentColor.opacity(0.14) : Color.secondary.opacity(0.075))
+            Label(
+                L10n.string("Filter"),
+                systemImage: hasAdvancedFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle"
             )
-            .overlay {
-                Capsule()
-                    .strokeBorder(
-                        appState.includeArchivedKanbanTasks ? Color.accentColor.opacity(0.22) : Color.primary.opacity(0.06),
-                        lineWidth: 1
-                    )
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .tint(hasAdvancedFilters ? .accentColor : nil)
+    }
+
+    private func menuLabel(_ text: String, isSelected: Bool, shouldLocalize: Bool = true) -> some View {
+        Group {
+            if isSelected {
+                Label(shouldLocalize ? L10n.string(text) : text, systemImage: "checkmark")
+            } else {
+                Text(shouldLocalize ? L10n.string(text) : text)
             }
         }
-        .buttonStyle(.plain)
+    }
+
+    private var hasAdvancedFilters: Bool {
+        assigneeFilter != .all ||
+            tenantFilter != .all ||
+            appState.includeArchivedKanbanTasks
     }
 
     @ViewBuilder
@@ -323,11 +266,15 @@ struct KanbanView: View {
                             kanbanBoardLayout(board)
                                 .frame(minWidth: 920)
 
-                            kanbanGroupedList(board)
+                            ScrollView {
+                                kanbanGroupedList(board)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                         }
                     }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .overlay(alignment: .topTrailing) {
                 if appState.isLoadingKanbanBoard && !appState.isRefreshingKanbanBoard {
                     HermesLoadingOverlay()
@@ -352,38 +299,36 @@ struct KanbanView: View {
             }
             .padding(.bottom, 4)
         }
-        .frame(maxWidth: .infinity, minHeight: 360, alignment: .topLeading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func kanbanGroupedList(_ board: KanbanBoard) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                ForEach(displayStatuses, id: \.rawValue) { status in
-                    let tasks = filteredTasks(for: status)
-                    if !tasks.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            HStack(spacing: 8) {
-                                Text(L10n.string(status.displayTitle))
-                                    .font(.headline)
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(displayStatuses, id: \.rawValue) { status in
+                let tasks = filteredTasks(for: status)
+                if !tasks.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 8) {
+                            Text(L10n.string(status.displayTitle))
+                                .font(.headline)
 
-                                HermesBadge(text: "\(tasks.count)", tint: KanbanColors.tint(for: status))
-                            }
+                            HermesBadge(text: "\(tasks.count)", tint: KanbanColors.tint(for: status))
+                        }
 
-                            LazyVStack(alignment: .leading, spacing: 10) {
-                                ForEach(tasks) { task in
-                                    KanbanTaskCard(
-                                        task: task,
-                                        isSelected: task.id == appState.selectedKanbanTaskID,
-                                        onSelect: { selectTask(task) }
-                                    )
-                                }
+                        LazyVStack(alignment: .leading, spacing: 10) {
+                            ForEach(tasks) { task in
+                                KanbanTaskCard(
+                                    task: task,
+                                    isSelected: task.id == appState.selectedKanbanTaskID,
+                                    onSelect: { selectTask(task) }
+                                )
                             }
                         }
                     }
                 }
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 360, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     @ViewBuilder
@@ -619,75 +564,6 @@ private enum KanbanColors {
             .secondary
         case .other:
             .secondary
-        }
-    }
-}
-
-private struct KanbanFilterMenu<Content: View>: View {
-    let label: String
-    let value: String
-    var isActive = false
-    var isDisabled = false
-    let content: Content
-
-    init(
-        label: String,
-        value: String,
-        isActive: Bool = false,
-        isDisabled: Bool = false,
-        @ViewBuilder content: () -> Content
-    ) {
-        self.label = label
-        self.value = value
-        self.isActive = isActive
-        self.isDisabled = isDisabled
-        self.content = content()
-    }
-
-    var body: some View {
-        Menu {
-            content
-        } label: {
-            HStack(spacing: 7) {
-                Text(L10n.string(label))
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-
-                Text(displayValue)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(isActive ? Color.accentColor : Color.primary.opacity(0.88))
-                    .lineLimit(1)
-
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(.horizontal, 10)
-            .frame(height: 30)
-            .background(
-                Capsule()
-                    .fill(isActive ? Color.accentColor.opacity(0.13) : Color.secondary.opacity(0.075))
-            )
-            .overlay {
-                Capsule()
-                    .strokeBorder(
-                        isActive ? Color.accentColor.opacity(0.24) : Color.primary.opacity(0.06),
-                        lineWidth: 1
-                    )
-            }
-        }
-        .buttonStyle(.plain)
-        .disabled(isDisabled)
-        .opacity(isDisabled ? 0.52 : 1)
-        .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private var displayValue: String {
-        switch value {
-        case "All", "All assignees", "All tenants":
-            return L10n.string(value)
-        default:
-            return value
         }
     }
 }
