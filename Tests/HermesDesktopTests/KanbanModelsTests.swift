@@ -188,6 +188,86 @@ struct KanbanModelsTests {
         #expect(detail.events[0].payload?["summary"] == .string("Published."))
         #expect(detail.runs[0].resolvedOutcome == "completed")
         #expect(detail.workerLog == "done")
+        #expect(detail.homeChannels.isEmpty)
+    }
+
+    @Test
+    func boardsPayloadDecodesProjectsAndCurrentSelection() throws {
+        let data = """
+        {
+          "ok": true,
+          "current": "desktop",
+          "supports_board_management": true,
+          "boards": [
+            {
+              "slug": "default",
+              "name": "Default",
+              "description": "",
+              "icon": "",
+              "color": "",
+              "created_at": null,
+              "archived": false,
+              "db_path": "~/.hermes/kanban.db",
+              "is_current": false,
+              "counts": {
+                "ready": 2
+              },
+              "total": 2
+            },
+            {
+              "slug": "desktop",
+              "name": "Hermes Desktop",
+              "description": "Release work",
+              "icon": "desktopcomputer",
+              "color": "#4F8CFF",
+              "created_at": 1800000000,
+              "archived": false,
+              "db_path": "~/.hermes/kanban/boards/desktop/kanban.db",
+              "is_current": true,
+              "counts": {
+                "ready": 1,
+                "done": 3
+              },
+              "total": 4
+            }
+          ]
+        }
+        """.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(KanbanBoardsResponse.self, from: data)
+
+        #expect(response.current == "desktop")
+        #expect(response.supportsBoardManagement)
+        #expect(response.boards.count == 2)
+        #expect(response.boards[0].isDefault)
+        #expect(response.boards[1].resolvedName == "Hermes Desktop")
+        #expect(response.boards[1].taskTotal == 4)
+        #expect(response.boards[1].databasePath == "~/.hermes/kanban/boards/desktop/kanban.db")
+        #expect(response.boards[1].isCurrent)
+    }
+
+    @Test
+    func taskDetailPayloadDecodesHomeChannels() throws {
+        let task = makeTask(status: .ready)
+        let payload = TaskDetailFixture(
+            task: task,
+            homeChannels: [
+                KanbanHomeChannel(
+                    platform: "telegram",
+                    chatID: "123",
+                    threadID: "",
+                    name: "Home",
+                    subscribed: true
+                )
+            ]
+        )
+        let data = try JSONEncoder().encode(KanbanTaskDetailResponse(ok: true, detail: payload.detail))
+        let detail = try JSONDecoder().decode(KanbanTaskDetailResponse.self, from: data).detail
+
+        #expect(detail.homeChannels.count == 1)
+        #expect(detail.homeChannels[0].platform == "telegram")
+        #expect(detail.homeChannels[0].subscribed)
+        #expect(detail.homeChannels[0].destinationLabel == "123")
     }
 
     @Test
@@ -209,6 +289,28 @@ struct KanbanModelsTests {
         #expect(draft.normalizedTenant == "desktop")
         #expect(draft.priority == 42)
         #expect(draft.skills == ["release-notes", "docs"])
+    }
+
+    @Test
+    func boardDraftValidationMatchesUpstreamSlugRules() {
+        var draft = KanbanBoardDraft()
+        #expect(draft.validationError == "Board slug is required.")
+
+        draft.slug = "  Desktop_Release-1  "
+        draft.name = " Hermes Desktop "
+        draft.description = " Release stream "
+        draft.icon = " desktopcomputer "
+        draft.color = " #4F8CFF "
+
+        #expect(draft.validationError == nil)
+        #expect(draft.normalizedSlug == "desktop_release-1")
+        #expect(draft.normalizedName == "Hermes Desktop")
+        #expect(draft.normalizedDescription == "Release stream")
+        #expect(draft.normalizedIcon == "desktopcomputer")
+        #expect(draft.normalizedColor == "#4F8CFF")
+
+        draft.slug = "_bad"
+        #expect(draft.validationError == "Board slug must be 1-64 lowercase letters, numbers, hyphens, or underscores.")
     }
 
     @Test
@@ -260,5 +362,22 @@ struct KanbanModelsTests {
             runCount: 0,
             latestEventAt: nil
         )
+    }
+
+    private struct TaskDetailFixture: Encodable {
+        let detail: KanbanTaskDetail
+
+        init(task: KanbanTask, homeChannels: [KanbanHomeChannel]) {
+            detail = KanbanTaskDetail(
+                task: task,
+                parentIDs: [],
+                childIDs: [],
+                comments: [],
+                events: [],
+                runs: [],
+                workerLog: nil,
+                homeChannels: homeChannels
+            )
+        }
     }
 }

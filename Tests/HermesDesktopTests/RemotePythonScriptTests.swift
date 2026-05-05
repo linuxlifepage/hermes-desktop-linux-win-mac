@@ -4,6 +4,26 @@ import Testing
 
 struct RemotePythonScriptTests {
     @Test
+    func kanbanHelperKeepsUpstreamBoardDatabasePaths() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/HermesDesktop/Services/KanbanBrowserService.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        #expect(source.contains(#"return kanban_home_path() / "kanban.db""#))
+        #expect(source.contains(#"return board_dir(normalized) / "kanban.db""#))
+        #expect(!source.contains(#"return kanban_home_path() / "kanban" / "kanban.db""#))
+        #expect(source.contains("def add_hermes_agent_import_paths():"))
+        #expect(source.contains(#"home / ".hermes" / "hermes-agent""#))
+        #expect(source.contains(#"venv_lib.glob("python*/site-packages")"#))
+        #expect(source.contains("def load_hermes_env_file():"))
+        #expect(source.contains(#"kanban_home_path() / ".env""#))
+        #expect(source.contains("load_hermes_env_file()"))
+    }
+
+    @Test
     func readonlySQLiteHelperFallsBackForWalDatabaseWithoutWritableSidecars() throws {
         let script = try RemotePythonScript.wrap([String: String](), body:
             """

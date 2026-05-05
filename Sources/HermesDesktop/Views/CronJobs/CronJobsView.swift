@@ -24,18 +24,12 @@ struct CronJobsView: View {
                     title: "Cron Jobs",
                     subtitle: "Browse, create and maintain Hermes jobs discovered on the active host."
                 ) {
-                    HStack(spacing: 10) {
-                        HermesRefreshButton(isRefreshing: appState.isRefreshingCronJobs) {
-                            Task { await appState.refreshCronJobs() }
-                        }
-                        .disabled(appState.isLoadingCronJobs || appState.isSavingCronJobDraft)
-
-                        HermesExpandableSearchField(
-                            text: $searchText,
-                            prompt: L10n.string("Search jobs"),
-                            expandedWidth: 220
-                        )
-                    }
+                    HermesExpandableSearchField(
+                        text: $searchText,
+                        prompt: L10n.string("Search jobs"),
+                        expandedWidth: 220,
+                        focusRequestID: appState.searchFocusRequestID
+                    )
                     .fixedSize(horizontal: true, vertical: false)
                 }
 

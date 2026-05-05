@@ -15,18 +15,12 @@ struct SkillsView: View {
                     title: "Skills",
                     subtitle: "Browse the Hermes skill library discovered on the active host."
                 ) {
-                    HStack(spacing: 10) {
-                        HermesRefreshButton(isRefreshing: appState.isRefreshingSkills) {
-                            Task { await appState.refreshSkills() }
-                        }
-                        .disabled(appState.isLoadingSkills || appState.isSavingSkillDraft)
-
-                        HermesExpandableSearchField(
-                            text: $searchText,
-                            prompt: L10n.string("Search skills"),
-                            expandedWidth: 220
-                        )
-                    }
+                    HermesExpandableSearchField(
+                        text: $searchText,
+                        prompt: L10n.string("Search skills"),
+                        expandedWidth: 220,
+                        focusRequestID: appState.searchFocusRequestID
+                    )
                     .fixedSize(horizontal: true, vertical: false)
                 }
 

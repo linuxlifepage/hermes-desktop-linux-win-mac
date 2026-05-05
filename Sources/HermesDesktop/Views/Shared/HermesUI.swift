@@ -1,5 +1,37 @@
 import SwiftUI
 
+enum HermesTheme {
+    static let pageHorizontalPadding: CGFloat = 24
+    static let pageVerticalPadding: CGFloat = 22
+    static let panelCornerRadius: CGFloat = 14
+    static let insetCornerRadius: CGFloat = 10
+    static let rowCornerRadius: CGFloat = 12
+
+    static var panelFill: Color {
+        Color(NSColor.controlBackgroundColor).opacity(0.72)
+    }
+
+    static var insetFill: Color {
+        Color.secondary.opacity(0.055)
+    }
+
+    static var rowFill: Color {
+        Color.secondary.opacity(0.045)
+    }
+
+    static var subtleStroke: Color {
+        Color.primary.opacity(0.055)
+    }
+
+    static var selectedFill: Color {
+        Color.accentColor.opacity(0.12)
+    }
+
+    static var selectedStroke: Color {
+        Color.accentColor.opacity(0.22)
+    }
+}
+
 enum HermesPageWidth {
     case standard
     case dashboard
@@ -25,8 +57,8 @@ struct HermesPageContainer<Content: View>: View {
 
     init(
         width: HermesPageWidth = .standard,
-        horizontalPadding: CGFloat = 28,
-        verticalPadding: CGFloat = 26,
+        horizontalPadding: CGFloat = HermesTheme.pageHorizontalPadding,
+        verticalPadding: CGFloat = HermesTheme.pageVerticalPadding,
         @ViewBuilder content: () -> Content
     ) {
         self.width = width
@@ -82,13 +114,13 @@ struct HermesPageHeader<Accessory: View>: View {
     private var titleBlock: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(L10n.string(title))
-                .font(.largeTitle)
+                .font(.title)
                 .fontWeight(.semibold)
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
 
             Text(L10n.string(subtitle))
-                .font(.subheadline)
+                .font(.callout)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -250,17 +282,16 @@ struct HermesSurfacePanel<Content: View>: View {
 
             content
         }
-        .padding(18)
+        .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color(NSColor.controlBackgroundColor))
+            RoundedRectangle(cornerRadius: HermesTheme.panelCornerRadius, style: .continuous)
+                .fill(HermesTheme.panelFill)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.07), lineWidth: 1)
+            RoundedRectangle(cornerRadius: HermesTheme.panelCornerRadius, style: .continuous)
+                .strokeBorder(HermesTheme.subtleStroke, lineWidth: 1)
         }
-        .shadow(color: .black.opacity(0.08), radius: 12, y: 4)
     }
 }
 
@@ -277,8 +308,8 @@ struct HermesInsetSurface<Content: View>: View {
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.secondary.opacity(0.08))
+                RoundedRectangle(cornerRadius: HermesTheme.insetCornerRadius, style: .continuous)
+                    .fill(HermesTheme.insetFill)
             )
     }
 }
@@ -305,12 +336,11 @@ struct HermesLoadingOverlay: View {
         ProgressView()
             .controlSize(.small)
             .padding(10)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: HermesTheme.insetCornerRadius, style: .continuous))
             .overlay {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+                RoundedRectangle(cornerRadius: HermesTheme.insetCornerRadius, style: .continuous)
+                    .strokeBorder(HermesTheme.subtleStroke, lineWidth: 1)
             }
-            .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
     }
 }
 
@@ -349,7 +379,9 @@ struct HermesRefreshButton: View {
                 Label(L10n.string("Refresh"), systemImage: "arrow.clockwise")
             }
         }
-        .buttonStyle(.borderedProminent)
+        .buttonStyle(.bordered)
+        .controlSize(.regular)
+        .help(L10n.string("Refresh"))
         .disabled(isRefreshing)
     }
 }
@@ -391,13 +423,13 @@ struct HermesBadge: View {
             }
 
             Text(L10n.string(text))
-                .font(isMonospaced ? .system(.caption, design: .monospaced).weight(.semibold) : .caption.weight(.semibold))
+                .font(isMonospaced ? .system(.caption2, design: .monospaced).weight(.semibold) : .caption2.weight(.semibold))
         }
         .foregroundStyle(foregroundStyle)
         .lineLimit(1)
         .fixedSize(horizontal: true, vertical: true)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 4)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
         .background(backgroundStyle, in: Capsule())
         .overlay {
             Capsule()
@@ -431,7 +463,7 @@ struct HermesBadge: View {
     private var backgroundStyle: Color {
         switch prominence {
         case .subtle:
-            return tint.opacity(0.12)
+            return tint.opacity(0.10)
         case .strong:
             return tint.opacity(0.86)
         }
@@ -456,7 +488,7 @@ struct HermesLabeledValue: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(L10n.string(label))
-                .font(.caption)
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
 
             Text(value)
@@ -469,10 +501,91 @@ struct HermesLabeledValue: View {
 
     private var valueFont: Font {
         if isMonospaced {
-            return .system(.subheadline, design: .monospaced)
+            return .system(.callout, design: .monospaced)
         }
 
-        return emphasizeValue ? .headline : .subheadline
+        return emphasizeValue ? .callout.weight(.semibold) : .callout
+    }
+}
+
+struct HermesInspectorField: Identifiable, Hashable {
+    let id: String
+    let label: String
+    let value: String
+    var isMonospaced = false
+    var emphasizeValue = false
+
+    init(
+        id: String? = nil,
+        label: String,
+        value: String,
+        isMonospaced: Bool = false,
+        emphasizeValue: Bool = false
+    ) {
+        self.id = id ?? "\(label)|\(value)"
+        self.label = label
+        self.value = value
+        self.isMonospaced = isMonospaced
+        self.emphasizeValue = emphasizeValue
+    }
+}
+
+struct HermesInspectorFieldList: View {
+    let fields: [HermesInspectorField]
+    var labelWidth: CGFloat = 108
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(fields.enumerated()), id: \.element.id) { index, field in
+                HermesInspectorFieldRow(field: field, labelWidth: labelWidth)
+
+                if index < fields.count - 1 {
+                    Divider()
+                        .padding(.leading, labelWidth + 10)
+                        .opacity(0.58)
+                }
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: HermesTheme.insetCornerRadius, style: .continuous)
+                .fill(HermesTheme.insetFill)
+        )
+        .overlay {
+            RoundedRectangle(cornerRadius: HermesTheme.insetCornerRadius, style: .continuous)
+                .strokeBorder(HermesTheme.subtleStroke, lineWidth: 1)
+        }
+    }
+}
+
+private struct HermesInspectorFieldRow: View {
+    let field: HermesInspectorField
+    let labelWidth: CGFloat
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(L10n.string(field.label))
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(width: labelWidth, alignment: .leading)
+
+            Text(field.value)
+                .font(valueFont)
+                .foregroundStyle(field.emphasizeValue ? .primary : .secondary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    private var valueFont: Font {
+        if field.isMonospaced {
+            return .system(.callout, design: .monospaced)
+        }
+
+        return field.emphasizeValue ? .callout.weight(.semibold) : .callout
     }
 }
 
@@ -482,6 +595,7 @@ struct HermesExpandableSearchField: View {
     var prompt = "Search"
     var collapsedWidth: CGFloat = 34
     var expandedWidth: CGFloat = 240
+    var focusRequestID: UUID?
 
     @FocusState private var isFocused: Bool
     @State private var isExpanded = false
@@ -536,17 +650,25 @@ struct HermesExpandableSearchField: View {
         .padding(.horizontal, 10)
         .frame(width: shouldShowExpandedField ? expandedWidth : collapsedWidth, height: 30, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color(NSColor.controlBackgroundColor))
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(HermesTheme.panelFill)
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.primary.opacity(shouldShowExpandedField ? 0.10 : 0.06), lineWidth: 1)
         }
-        .shadow(color: .black.opacity(shouldShowExpandedField ? 0.06 : 0.03), radius: shouldShowExpandedField ? 8 : 4, y: 2)
         .animation(.spring(response: 0.24, dampingFraction: 0.88), value: shouldShowExpandedField)
         .onAppear {
             isExpanded = !text.isEmpty
+        }
+        .onChange(of: focusRequestID) { _, requestID in
+            guard requestID != nil else { return }
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.88)) {
+                isExpanded = true
+            }
+            DispatchQueue.main.async {
+                isFocused = true
+            }
         }
         .onChange(of: isFocused) { _, focused in
             if !focused && text.isEmpty {
@@ -562,6 +684,7 @@ struct HermesSearchActionBar<LeadingContent: View>: View {
     var prompt = "Search"
     var collapsedWidth: CGFloat = 34
     var expandedWidth: CGFloat = 240
+    var focusRequestID: UUID?
     let leadingContent: LeadingContent
 
     init(
@@ -569,12 +692,14 @@ struct HermesSearchActionBar<LeadingContent: View>: View {
         prompt: String = "Search",
         collapsedWidth: CGFloat = 34,
         expandedWidth: CGFloat = 240,
+        focusRequestID: UUID? = nil,
         @ViewBuilder leadingContent: () -> LeadingContent
     ) {
         self._text = text
         self.prompt = prompt
         self.collapsedWidth = collapsedWidth
         self.expandedWidth = expandedWidth
+        self.focusRequestID = focusRequestID
         self.leadingContent = leadingContent()
     }
 
@@ -594,7 +719,8 @@ struct HermesSearchActionBar<LeadingContent: View>: View {
             text: $text,
             prompt: prompt,
             collapsedWidth: collapsedWidth,
-            expandedWidth: expandedWidth
+            expandedWidth: expandedWidth,
+            focusRequestID: focusRequestID
         )
     }
 }

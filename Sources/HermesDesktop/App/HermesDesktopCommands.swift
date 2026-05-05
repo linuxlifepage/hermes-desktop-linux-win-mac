@@ -32,6 +32,12 @@ struct HermesDesktopCommands: Commands {
             .keyboardShortcut("r", modifiers: [.command])
             .disabled(!appState.canRefreshCurrentSection)
 
+            Button(L10n.string("Find in Current Section")) {
+                appState.requestSearchFocusFromCommand()
+            }
+            .keyboardShortcut("f", modifiers: [.command])
+            .disabled(!appState.canFocusSearchCurrentSection)
+
             Button(L10n.string("Save Current File")) {
                 Task {
                     await appState.saveSelectedWorkspaceFile()
@@ -39,6 +45,15 @@ struct HermesDesktopCommands: Commands {
             }
             .keyboardShortcut("s", modifiers: [.command])
             .disabled(!appState.canSaveCurrentWorkspaceFile)
+
+            Divider()
+
+            Button(L10n.string("Check for Updates…")) {
+                Task {
+                    await appState.checkForUpdatesFromCommand()
+                }
+            }
+            .disabled(appState.isCheckingForUpdates)
         }
 
         CommandMenu(L10n.string("Navigate")) {

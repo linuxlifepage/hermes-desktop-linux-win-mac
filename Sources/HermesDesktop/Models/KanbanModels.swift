@@ -5,9 +5,47 @@ struct KanbanBoardResponse: Codable, Sendable {
     let board: KanbanBoard
 }
 
+struct KanbanBoardsResponse: Codable, Sendable {
+    let ok: Bool?
+    let boards: [KanbanProject]
+    let current: String?
+    let supportsBoardManagement: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case ok
+        case boards
+        case current
+        case supportsBoardManagement = "supports_board_management"
+    }
+
+    init(ok: Bool? = nil, boards: [KanbanProject], current: String?, supportsBoardManagement: Bool = false) {
+        self.ok = ok
+        self.boards = boards
+        self.current = current
+        self.supportsBoardManagement = supportsBoardManagement
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decodeIfPresent(Bool.self, forKey: .ok)
+        boards = try container.decodeIfPresent([KanbanProject].self, forKey: .boards) ?? []
+        current = try container.decodeIfPresent(String.self, forKey: .current)
+        supportsBoardManagement = try container.decodeIfPresent(Bool.self, forKey: .supportsBoardManagement) ?? false
+    }
+}
+
 struct KanbanTaskDetailResponse: Codable, Sendable {
     let ok: Bool
     let detail: KanbanTaskDetail
+}
+
+struct KanbanBoardOperationResponse: Codable, Sendable {
+    let ok: Bool?
+    let board: KanbanProject?
+    let boards: [KanbanProject]?
+    let current: String?
+    let result: JSONValue?
+    let message: String?
 }
 
 struct KanbanOperationResponse: Codable, Sendable {
@@ -23,6 +61,116 @@ struct KanbanOperationResponse: Codable, Sendable {
         case taskID = "task_id"
         case detail
         case dispatch
+    }
+}
+
+struct KanbanProject: Codable, Identifiable, Hashable, Sendable {
+    static let defaultSlug = "default"
+
+    let slug: String
+    let name: String?
+    let description: String?
+    let icon: String?
+    let color: String?
+    let createdAt: Int?
+    let archived: Bool
+    let databasePath: String?
+    let isCurrent: Bool
+    let counts: [String: Int]
+    let total: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case slug
+        case name
+        case description
+        case icon
+        case color
+        case createdAt = "created_at"
+        case archived
+        case databasePath = "db_path"
+        case isCurrent = "is_current"
+        case counts
+        case total
+    }
+
+    init(
+        slug: String,
+        name: String? = nil,
+        description: String? = nil,
+        icon: String? = nil,
+        color: String? = nil,
+        createdAt: Int? = nil,
+        archived: Bool = false,
+        databasePath: String? = nil,
+        isCurrent: Bool = false,
+        counts: [String: Int] = [:],
+        total: Int? = nil
+    ) {
+        self.slug = slug
+        self.name = name
+        self.description = description
+        self.icon = icon
+        self.color = color
+        self.createdAt = createdAt
+        self.archived = archived
+        self.databasePath = databasePath
+        self.isCurrent = isCurrent
+        self.counts = counts
+        self.total = total
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        slug = try container.decode(String.self, forKey: .slug)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        icon = try container.decodeIfPresent(String.self, forKey: .icon)
+        color = try container.decodeIfPresent(String.self, forKey: .color)
+        createdAt = try container.decodeIfPresent(Int.self, forKey: .createdAt)
+        archived = try container.decodeIfPresent(Bool.self, forKey: .archived) ?? false
+        databasePath = try container.decodeIfPresent(String.self, forKey: .databasePath)
+        isCurrent = try container.decodeIfPresent(Bool.self, forKey: .isCurrent) ?? false
+        counts = try container.decodeIfPresent([String: Int].self, forKey: .counts) ?? [:]
+        total = try container.decodeIfPresent(Int.self, forKey: .total)
+    }
+
+    var id: String { slug }
+
+    var isDefault: Bool {
+        slug == Self.defaultSlug
+    }
+
+    var resolvedName: String {
+        let trimmedName = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if !trimmedName.isEmpty {
+            return trimmedName
+        }
+        if isDefault {
+            return L10n.string("Default")
+        }
+        return slug
+            .replacingOccurrences(of: "_", with: "-")
+            .split(separator: "-")
+            .map { $0.capitalized }
+            .joined(separator: " ")
+    }
+
+    var resolvedIcon: String {
+        let trimmedIcon = icon?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmedIcon.isEmpty ? "rectangle.3.group" : trimmedIcon
+    }
+
+    var resolvedDescription: String? {
+        let trimmed = description?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var taskTotal: Int {
+        total ?? counts.values.reduce(0, +)
+    }
+
+    var createdDate: Date? {
+        createdAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }
     }
 }
 
@@ -501,6 +649,7 @@ struct KanbanTaskDetail: Codable, Hashable, Sendable {
     let events: [KanbanEvent]
     let runs: [KanbanRun]
     let workerLog: String?
+    let homeChannels: [KanbanHomeChannel]
 
     enum CodingKeys: String, CodingKey {
         case task
@@ -510,6 +659,97 @@ struct KanbanTaskDetail: Codable, Hashable, Sendable {
         case events
         case runs
         case workerLog = "worker_log"
+        case homeChannels = "home_channels"
+    }
+
+    init(
+        task: KanbanTask,
+        parentIDs: [String],
+        childIDs: [String],
+        comments: [KanbanComment],
+        events: [KanbanEvent],
+        runs: [KanbanRun],
+        workerLog: String?,
+        homeChannels: [KanbanHomeChannel] = []
+    ) {
+        self.task = task
+        self.parentIDs = parentIDs
+        self.childIDs = childIDs
+        self.comments = comments
+        self.events = events
+        self.runs = runs
+        self.workerLog = workerLog
+        self.homeChannels = homeChannels
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        task = try container.decode(KanbanTask.self, forKey: .task)
+        parentIDs = try container.decodeIfPresent([String].self, forKey: .parentIDs) ?? []
+        childIDs = try container.decodeIfPresent([String].self, forKey: .childIDs) ?? []
+        comments = try container.decodeIfPresent([KanbanComment].self, forKey: .comments) ?? []
+        events = try container.decodeIfPresent([KanbanEvent].self, forKey: .events) ?? []
+        runs = try container.decodeIfPresent([KanbanRun].self, forKey: .runs) ?? []
+        workerLog = try container.decodeIfPresent(String.self, forKey: .workerLog)
+        homeChannels = try container.decodeIfPresent([KanbanHomeChannel].self, forKey: .homeChannels) ?? []
+    }
+}
+
+struct KanbanHomeChannel: Codable, Identifiable, Hashable, Sendable {
+    let platform: String
+    let chatID: String
+    let threadID: String
+    let name: String?
+    let subscribed: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case platform
+        case chatID = "chat_id"
+        case threadID = "thread_id"
+        case name
+        case subscribed
+    }
+
+    init(
+        platform: String,
+        chatID: String,
+        threadID: String = "",
+        name: String? = nil,
+        subscribed: Bool = false
+    ) {
+        self.platform = platform
+        self.chatID = chatID
+        self.threadID = threadID
+        self.name = name
+        self.subscribed = subscribed
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        platform = try container.decode(String.self, forKey: .platform)
+        chatID = try container.decode(String.self, forKey: .chatID)
+        threadID = try container.decodeIfPresent(String.self, forKey: .threadID) ?? ""
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        subscribed = try container.decodeIfPresent(Bool.self, forKey: .subscribed) ?? false
+    }
+
+    var id: String {
+        "\(platform):\(chatID):\(threadID)"
+    }
+
+    var resolvedName: String {
+        let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? L10n.string("Home") : trimmed
+    }
+
+    var displayPlatform: String {
+        platform
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
+    }
+
+    var destinationLabel: String {
+        threadID.isEmpty ? chatID : "\(chatID) / \(threadID)"
     }
 }
 
@@ -718,6 +958,49 @@ struct KanbanTaskDraft: Equatable {
         }
         if skills.contains(where: { $0.contains(",") }) {
             return "Skill names must be comma-separated without embedded commas."
+        }
+        return nil
+    }
+}
+
+struct KanbanBoardDraft: Equatable {
+    var slug = ""
+    var name = ""
+    var description = ""
+    var icon = ""
+    var color = ""
+    var switchAfterCreate = false
+
+    var normalizedSlug: String {
+        slug.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    var normalizedName: String? {
+        let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    var normalizedDescription: String? {
+        let value = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    var normalizedIcon: String? {
+        let value = icon.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    var normalizedColor: String? {
+        let value = color.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    var validationError: String? {
+        if normalizedSlug.isEmpty {
+            return "Board slug is required."
+        }
+        if normalizedSlug.range(of: #"^[a-z0-9][a-z0-9\-_]{0,63}$"#, options: .regularExpression) == nil {
+            return "Board slug must be 1-64 lowercase letters, numbers, hyphens, or underscores."
         }
         return nil
     }

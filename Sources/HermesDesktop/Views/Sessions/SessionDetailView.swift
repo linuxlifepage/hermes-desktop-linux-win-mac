@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 private let sessionDetailBottomID = "session-detail-bottom"
@@ -195,7 +196,7 @@ struct SessionDetailView: View {
                 title: "Transcript",
                 subtitle: "Messages are shown in the order Hermes stored them for this session."
             ) {
-                LazyVStack(alignment: .leading, spacing: 12) {
+                LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(messages) { message in
                         MessageCard(
                             message: message,
@@ -229,8 +230,8 @@ struct SessionDetailView: View {
         )
         .id(session?.id ?? "new-session")
         .padding(.horizontal, 24)
-        .padding(.vertical, 14)
-        .background(.regularMaterial)
+        .padding(.vertical, 12)
+        .background(.bar)
     }
 
     private func metadataExpansionBinding(for messageID: String) -> Binding<Bool> {
@@ -317,13 +318,19 @@ private struct SessionSummaryPanel: View {
                 HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(session.resolvedTitle)
-                            .font(.title2)
+                            .font(.title3)
                             .fontWeight(.semibold)
 
                         Text(session.id)
-                            .font(.caption)
+                            .font(.system(.caption, design: .monospaced))
                             .foregroundStyle(.secondary)
                             .textSelection(.enabled)
+                            .contextMenu {
+                                Button(L10n.string("Copy Session ID")) {
+                                    NSPasteboard.general.clearContents()
+                                    NSPasteboard.general.setString(session.id, forType: .string)
+                                }
+                            }
                     }
 
                     Spacer(minLength: 12)
@@ -337,57 +344,52 @@ private struct SessionSummaryPanel: View {
                             HermesBadge(text: L10n.string("%@ messages", "\(count)"), tint: .accentColor)
                         }
 
-                        Button(action: onDelete) {
-                            Group {
-                                if isDeleting {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                } else {
-                                    Image(systemName: "trash")
-                                        .font(.caption.weight(.semibold))
-                                }
+                        Menu {
+                            Button(L10n.string("Delete session"), role: .destructive, action: onDelete)
+                        } label: {
+                            if isDeleting {
+                                ProgressView()
+                                    .controlSize(.small)
+                            } else {
+                                Label(L10n.string("More"), systemImage: "ellipsis.circle")
+                                    .labelStyle(.iconOnly)
                             }
-                            .foregroundStyle(.red)
-                            .frame(minWidth: 14, minHeight: 14)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 7)
-                            .background(Color.red.opacity(0.12), in: Capsule())
                         }
-                        .buttonStyle(.plain)
-                        .help(L10n.string("Delete session"))
-                        .accessibilityLabel(L10n.string("Delete session"))
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .help(L10n.string("More session actions"))
+                        .accessibilityLabel(L10n.string("More session actions"))
                         .disabled(isDeleting)
                     }
                 }
 
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 18) {
-                        sessionDates
-                    }
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        sessionDates
-                    }
+                if !sessionMetadataFields.isEmpty {
+                    HermesInspectorFieldList(fields: sessionMetadataFields)
                 }
             }
         }
     }
 
-    @ViewBuilder
-    private var sessionDates: some View {
+    private var sessionMetadataFields: [HermesInspectorField] {
+        var fields: [HermesInspectorField] = []
+
         if let startedAt = session.startedAt?.dateValue {
-            HermesLabeledValue(
+            fields.append(HermesInspectorField(
+                id: "started",
                 label: "Started",
                 value: DateFormatters.shortDateTimeFormatter().string(from: startedAt)
-            )
+            ))
         }
 
         if let lastActive = session.lastActive?.dateValue {
-            HermesLabeledValue(
+            fields.append(HermesInspectorField(
+                id: "last-active",
                 label: "Last active",
                 value: DateFormatters.shortDateTimeFormatter().string(from: lastActive)
-            )
+            ))
         }
+
+        return fields
     }
 }
 
@@ -430,13 +432,14 @@ private struct SessionComposerPanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 8) {
                 Image(systemName: "bubble.left.and.bubble.right")
+                    .font(.subheadline)
                     .foregroundStyle(Color.accentColor)
 
                 Text(L10n.string(title))
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
 
                 Spacer()
 
@@ -471,12 +474,12 @@ private struct SessionComposerPanel: View {
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color(NSColor.controlBackgroundColor))
+            RoundedRectangle(cornerRadius: HermesTheme.panelCornerRadius, style: .continuous)
+                .fill(Color(NSColor.controlBackgroundColor).opacity(0.84))
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+            RoundedRectangle(cornerRadius: HermesTheme.panelCornerRadius, style: .continuous)
+                .strokeBorder(HermesTheme.subtleStroke, lineWidth: 1)
         }
     }
 
@@ -517,13 +520,13 @@ private struct SessionComposerPanel: View {
             .background {
                 if !usesExpandedEditor {
                     RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .fill(Color.secondary.opacity(0.08))
+                        .fill(HermesTheme.insetFill)
                 }
             }
             .overlay {
                 if !usesExpandedEditor {
                     RoundedRectangle(cornerRadius: 13, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                        .strokeBorder(HermesTheme.subtleStroke, lineWidth: 1)
                 }
             }
             .contentShape(Rectangle())
@@ -554,7 +557,7 @@ private struct SessionComposerPanel: View {
         ZStack(alignment: .topLeading) {
             if showsEditorBackground {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.secondary.opacity(0.08))
+                    .fill(HermesTheme.insetFill)
             }
 
             SessionPromptTextView(
@@ -570,7 +573,7 @@ private struct SessionComposerPanel: View {
         .overlay {
             if showsEditorBackground {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                    .strokeBorder(HermesTheme.subtleStroke, lineWidth: 1)
             }
         }
     }
@@ -862,7 +865,7 @@ private struct PendingBubble: View {
     let tint: Color
 
     var body: some View {
-        HermesInsetSurface {
+        TranscriptMessageSurface(tint: tint) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     Image(systemName: icon)
@@ -875,10 +878,42 @@ private struct PendingBubble: View {
                 }
 
                 Text(content)
+                    .font(.callout)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+    }
+}
+
+private struct TranscriptMessageSurface<Content: View>: View {
+    let tint: Color
+    let content: Content
+
+    init(tint: Color, @ViewBuilder content: () -> Content) {
+        self.tint = tint
+        self.content = content()
+    }
+
+    var body: some View {
+        content
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: HermesTheme.rowCornerRadius, style: .continuous)
+                    .fill(HermesTheme.rowFill)
+            )
+            .overlay(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 999, style: .continuous)
+                    .fill(tint.opacity(0.62))
+                    .frame(width: 2)
+                    .padding(.vertical, 8)
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: HermesTheme.rowCornerRadius, style: .continuous)
+                    .strokeBorder(HermesTheme.subtleStroke, lineWidth: 1)
+            }
     }
 }
 
@@ -906,7 +941,7 @@ private struct ConversationMessageCard: View {
     @Binding var isShowingMetadata: Bool
 
     var body: some View {
-        HermesInsetSurface {
+        TranscriptMessageSurface(tint: roleTint) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .center, spacing: 10) {
                     HermesBadge(
@@ -920,13 +955,14 @@ private struct ConversationMessageCard: View {
 
                     if let timestampText = message.timestampText {
                         Text(timestampText)
-                            .font(.caption)
+                            .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
                 }
 
                 if let content = message.content, !content.isEmpty {
                     Text(content)
+                        .font(.callout)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -1004,20 +1040,18 @@ private struct ToolMessageCard: View {
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.secondary.opacity(0.045))
+            RoundedRectangle(cornerRadius: HermesTheme.rowCornerRadius, style: .continuous)
+                .fill(HermesTheme.rowFill)
         )
         .overlay(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
+            RoundedRectangle(cornerRadius: 999, style: .continuous)
                 .fill(statusTint.opacity(0.72))
-                .frame(width: 3)
+                .frame(width: 2)
+                .padding(.vertical, 8)
         }
         .overlay {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(
-                    Color.secondary.opacity(0.16),
-                    style: StrokeStyle(lineWidth: 1, dash: [4, 4])
-                )
+            RoundedRectangle(cornerRadius: HermesTheme.rowCornerRadius, style: .continuous)
+                .strokeBorder(Color.secondary.opacity(0.13), lineWidth: 1)
         }
     }
 
@@ -1072,7 +1106,7 @@ private struct ToolMessageCard: View {
                 }
 
                 Text(L10n.string(isExpanded ? "Hide details" : "Details"))
-                    .font(.caption.weight(.semibold))
+                    .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
         }
@@ -1147,7 +1181,11 @@ private struct ToolOutputView: View {
                         .padding(10)
                 }
                 .frame(maxHeight: isShowingFullOutput ? 280 : 180)
-                .background(Color.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .background(HermesTheme.insetFill, in: RoundedRectangle(cornerRadius: HermesTheme.insetCornerRadius, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: HermesTheme.insetCornerRadius, style: .continuous)
+                        .strokeBorder(HermesTheme.subtleStroke, lineWidth: 1)
+                }
             } else {
                 Text(L10n.string("No text payload"))
                     .font(.caption)

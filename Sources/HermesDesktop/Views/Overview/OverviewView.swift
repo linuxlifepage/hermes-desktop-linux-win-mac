@@ -38,27 +38,10 @@ struct OverviewView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .top, spacing: 20) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(L10n.string("Overview"))
-                    .font(.largeTitle)
-                    .fontWeight(.semibold)
-
-                Text(L10n.string("See which host Hermes is connected to, where its files live, and which source powers Sessions, Cron Jobs, and Usage."))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Spacer(minLength: 16)
-
-            HermesRefreshButton(isRefreshing: appState.isRefreshingOverview) {
-                Task {
-                    await appState.refreshOverview(manual: true)
-                }
-            }
-            .disabled(appState.isBusy)
-        }
+        HermesPageHeader(
+            title: "Overview",
+            subtitle: "See which host Hermes is connected to, where its files live, and which source powers Sessions, Cron Jobs, and Usage."
+        )
     }
 
     @ViewBuilder
@@ -114,41 +97,16 @@ struct OverviewView: View {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(activeConnection.label)
-                        .font(.title3)
+                        .font(.headline)
                         .fontWeight(.semibold)
 
                     Text(activeConnection.displayDestination)
-                        .font(.system(.subheadline, design: .monospaced))
+                        .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
 
-                HermesLabeledValue(
-                    label: "Connection",
-                    value: "SSH",
-                    emphasizeValue: true
-                )
-
-                if let alias = activeConnection.trimmedAlias {
-                    HermesLabeledValue(
-                        label: "Alias",
-                        value: alias,
-                        isMonospaced: true
-                    )
-                } else if let host = activeConnection.trimmedHost {
-                    HermesLabeledValue(
-                        label: "Host",
-                        value: host,
-                        isMonospaced: true
-                    )
-                }
-
-                if let lastConnectedAt = activeConnection.lastConnectedAt {
-                    HermesLabeledValue(
-                        label: "Last connected",
-                        value: DateFormatters.relativeFormatter().localizedString(for: lastConnectedAt, relativeTo: .now)
-                    )
-                }
+                HermesInspectorFieldList(fields: currentHostFields(activeConnection), labelWidth: 96)
             }
         }
     }
@@ -159,32 +117,15 @@ struct OverviewView: View {
             subtitle: "The active Hermes profile and the folders it resolves to on the current host."
         ) {
             VStack(alignment: .leading, spacing: 14) {
-                HermesLabeledValue(
-                    label: "Active profile",
-                    value: overview.activeProfile.name,
-                    emphasizeValue: true
-                )
-
-                HermesLabeledValue(
-                    label: "Home folder",
-                    value: overview.remoteHome,
-                    isMonospaced: true
-                )
-
-                HermesLabeledValue(
-                    label: "Hermes home",
-                    value: overview.hermesHome,
-                    isMonospaced: true,
-                    emphasizeValue: true
-                )
+                HermesInspectorFieldList(fields: workspaceFields(overview), labelWidth: 96)
 
                 if !overview.availableProfiles.isEmpty {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(L10n.string("Discovered profiles"))
-                            .font(.caption)
+                            .font(.caption2.weight(.semibold))
                             .foregroundStyle(.secondary)
 
-                        HStack(spacing: 8) {
+                        HermesWrappingFlowLayout(horizontalSpacing: 7, verticalSpacing: 7) {
                             ForEach(overview.availableProfiles) { profile in
                                 HermesBadge(
                                     text: profile.name,
@@ -310,28 +251,7 @@ struct OverviewView: View {
                     }
 
                     VStack(alignment: .leading, spacing: 14) {
-                        HermesLabeledValue(
-                            label: "Database path",
-                            value: sessionStore.path,
-                            isMonospaced: true,
-                            emphasizeValue: true
-                        )
-
-                        if let sessionTable = sessionStore.sessionTable {
-                            HermesLabeledValue(
-                                label: "Sessions table",
-                                value: sessionTable,
-                                isMonospaced: true
-                            )
-                        }
-
-                        if let messageTable = sessionStore.messageTable {
-                            HermesLabeledValue(
-                                label: "Messages table",
-                                value: messageTable,
-                                isMonospaced: true
-                            )
-                        }
+                        HermesInspectorFieldList(fields: sessionStoreFields(sessionStore), labelWidth: 104)
                     }
                 } else {
                     HStack(alignment: .center, spacing: 12) {
@@ -354,12 +274,15 @@ struct OverviewView: View {
                         HermesBadge(text: "JSONL", tint: .secondary)
                     }
 
-                    HermesLabeledValue(
-                        label: "Transcript folder",
-                        value: overview.paths.sessionsDir,
-                        isMonospaced: true,
-                        emphasizeValue: true
-                    )
+                    HermesInspectorFieldList(fields: [
+                        HermesInspectorField(
+                            id: "transcript-folder",
+                            label: "Transcript folder",
+                            value: overview.paths.sessionsDir,
+                            isMonospaced: true,
+                            emphasizeValue: true
+                        )
+                    ], labelWidth: 112)
                 }
             }
         }
@@ -391,12 +314,15 @@ struct OverviewView: View {
                     HermesBadge(text: "Host-wide", tint: .accentColor)
                 }
 
-                HermesLabeledValue(
-                    label: "Database path",
-                    value: overview.kanban?.databasePath ?? overview.paths.kanbanDatabase ?? "~/.hermes/kanban.db",
-                    isMonospaced: true,
-                    emphasizeValue: true
-                )
+                HermesInspectorFieldList(fields: [
+                    HermesInspectorField(
+                        id: "database-path",
+                        label: "Database path",
+                        value: overview.kanban?.databasePath ?? overview.paths.kanbanDatabase ?? "~/.hermes/kanban.db",
+                        isMonospaced: true,
+                        emphasizeValue: true
+                    )
+                ], labelWidth: 104)
 
                 HStack(spacing: 10) {
                     HermesBadge(
@@ -454,6 +380,99 @@ struct OverviewView: View {
             )
         ]
     }
+
+    private func currentHostFields(_ activeConnection: ConnectionProfile) -> [HermesInspectorField] {
+        var fields = [
+            HermesInspectorField(
+                id: "connection",
+                label: "Connection",
+                value: "SSH",
+                emphasizeValue: true
+            )
+        ]
+
+        if let alias = activeConnection.trimmedAlias {
+            fields.append(HermesInspectorField(
+                id: "alias",
+                label: "Alias",
+                value: alias,
+                isMonospaced: true
+            ))
+        } else if let host = activeConnection.trimmedHost {
+            fields.append(HermesInspectorField(
+                id: "host",
+                label: "Host",
+                value: host,
+                isMonospaced: true
+            ))
+        }
+
+        if let lastConnectedAt = activeConnection.lastConnectedAt {
+            fields.append(HermesInspectorField(
+                id: "last-connected",
+                label: "Last connected",
+                value: DateFormatters.relativeFormatter().localizedString(for: lastConnectedAt, relativeTo: .now)
+            ))
+        }
+
+        return fields
+    }
+
+    private func workspaceFields(_ overview: RemoteDiscovery) -> [HermesInspectorField] {
+        [
+            HermesInspectorField(
+                id: "active-profile",
+                label: "Active profile",
+                value: overview.activeProfile.name,
+                emphasizeValue: true
+            ),
+            HermesInspectorField(
+                id: "home-folder",
+                label: "Home folder",
+                value: overview.remoteHome,
+                isMonospaced: true
+            ),
+            HermesInspectorField(
+                id: "hermes-home",
+                label: "Hermes home",
+                value: overview.hermesHome,
+                isMonospaced: true,
+                emphasizeValue: true
+            )
+        ]
+    }
+
+    private func sessionStoreFields(_ sessionStore: RemoteSessionStore) -> [HermesInspectorField] {
+        var fields = [
+            HermesInspectorField(
+                id: "database-path",
+                label: "Database path",
+                value: sessionStore.path,
+                isMonospaced: true,
+                emphasizeValue: true
+            )
+        ]
+
+        if let sessionTable = sessionStore.sessionTable {
+            fields.append(HermesInspectorField(
+                id: "sessions-table",
+                label: "Sessions table",
+                value: sessionTable,
+                isMonospaced: true
+            ))
+        }
+
+        if let messageTable = sessionStore.messageTable {
+            fields.append(HermesInspectorField(
+                id: "messages-table",
+                label: "Messages table",
+                value: messageTable,
+                isMonospaced: true
+            ))
+        }
+
+        return fields
+    }
 }
 
 private struct OverviewPathRow: View {
@@ -466,7 +485,7 @@ private struct OverviewPathRow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .center, spacing: 10) {
                 Text(L10n.string(title))
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
 
                 HermesBadge(text: badge, tint: .secondary)
 
@@ -476,18 +495,22 @@ private struct OverviewPathRow: View {
             }
 
             Text(value)
-                .font(.system(.subheadline, design: .monospaced))
+                .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)
                 .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.secondary.opacity(0.08))
+            RoundedRectangle(cornerRadius: HermesTheme.rowCornerRadius, style: .continuous)
+                .fill(HermesTheme.rowFill)
         )
+        .overlay {
+            RoundedRectangle(cornerRadius: HermesTheme.rowCornerRadius, style: .continuous)
+                .strokeBorder(HermesTheme.subtleStroke, lineWidth: 1)
+        }
     }
 }
 
@@ -506,12 +529,12 @@ private struct OverviewStatusRow: View {
                 .foregroundStyle(item.isReady ? .green : .orange)
 
             Text(L10n.string(item.title))
-                .font(.subheadline)
+                .font(.callout)
 
             Spacer()
 
             Text(L10n.string(item.isReady ? "Ready" : "Missing"))
-                .font(.caption.weight(.semibold))
+                .font(.caption2.weight(.semibold))
                 .foregroundStyle(item.isReady ? .green : .orange)
         }
     }

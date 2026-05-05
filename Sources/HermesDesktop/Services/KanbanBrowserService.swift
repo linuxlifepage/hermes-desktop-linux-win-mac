@@ -7,10 +7,27 @@ final class KanbanBrowserService: @unchecked Sendable {
         self.sshTransport = sshTransport
     }
 
-    func loadBoard(connection: ConnectionProfile, includeArchived: Bool) async throws -> KanbanBoard {
+    func loadBoards(connection: ConnectionProfile, includeArchived: Bool = false) async throws -> KanbanBoardsResponse {
+        let script = try RemotePythonScript.wrap(
+            KanbanBoardsRequest(
+                kanbanHome: connection.remoteKanbanHomePath,
+                includeArchived: includeArchived
+            ),
+            body: boardsBody
+        )
+
+        return try await sshTransport.executeJSON(
+            on: connection,
+            pythonScript: script,
+            responseType: KanbanBoardsResponse.self
+        )
+    }
+
+    func loadBoard(connection: ConnectionProfile, boardSlug: String, includeArchived: Bool) async throws -> KanbanBoard {
         let script = try RemotePythonScript.wrap(
             KanbanBoardRequest(
                 kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
                 includeArchived: includeArchived
             ),
             body: boardBody
@@ -23,10 +40,11 @@ final class KanbanBrowserService: @unchecked Sendable {
         ).board
     }
 
-    func loadTaskDetail(connection: ConnectionProfile, taskID: String) async throws -> KanbanTaskDetail {
+    func loadTaskDetail(connection: ConnectionProfile, boardSlug: String, taskID: String) async throws -> KanbanTaskDetail {
         let script = try RemotePythonScript.wrap(
             KanbanTaskDetailRequest(
                 kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
                 taskID: taskID
             ),
             body: taskDetailBody
@@ -39,11 +57,79 @@ final class KanbanBrowserService: @unchecked Sendable {
         ).detail
     }
 
-    func createTask(connection: ConnectionProfile, draft: KanbanTaskDraft) async throws -> String {
+    func createBoard(connection: ConnectionProfile, draft: KanbanBoardDraft) async throws -> KanbanProject {
+        let script = try RemotePythonScript.wrap(
+            KanbanBoardCreateRequest(
+                kanbanHome: connection.remoteKanbanHomePath,
+                slug: draft.normalizedSlug,
+                name: draft.normalizedName,
+                description: draft.normalizedDescription,
+                icon: draft.normalizedIcon,
+                color: draft.normalizedColor,
+                switchAfterCreate: draft.switchAfterCreate
+            ),
+            body: createBoardBody
+        )
+
+        let response = try await sshTransport.executeJSON(
+            on: connection,
+            pythonScript: script,
+            responseType: KanbanBoardOperationResponse.self
+        )
+
+        guard let board = response.board else {
+            throw SSHTransportError.invalidResponse("The remote Kanban board create operation did not return a board.")
+        }
+        return board
+    }
+
+    func archiveBoard(connection: ConnectionProfile, slug: String) async throws {
+        let script = try RemotePythonScript.wrap(
+            KanbanBoardArchiveRequest(
+                kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: slug
+            ),
+            body: archiveBoardBody
+        )
+
+        _ = try await sshTransport.executeJSON(
+            on: connection,
+            pythonScript: script,
+            responseType: KanbanBoardOperationResponse.self
+        )
+    }
+
+    func setHomeSubscription(
+        connection: ConnectionProfile,
+        boardSlug: String,
+        taskID: String,
+        homeChannel: KanbanHomeChannel,
+        subscribed: Bool
+    ) async throws {
+        let script = try RemotePythonScript.wrap(
+            KanbanHomeSubscriptionRequest(
+                kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
+                taskID: taskID,
+                platform: homeChannel.platform,
+                subscribed: subscribed
+            ),
+            body: homeSubscriptionBody
+        )
+
+        _ = try await sshTransport.executeJSON(
+            on: connection,
+            pythonScript: script,
+            responseType: KanbanOperationResponse.self
+        )
+    }
+
+    func createTask(connection: ConnectionProfile, boardSlug: String, draft: KanbanTaskDraft) async throws -> String {
         let response = try await performMutation(
             connection: connection,
             request: KanbanMutationRequest(
                 kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
                 author: connection.resolvedHermesProfileName,
                 action: "create",
                 taskID: nil,
@@ -67,11 +153,12 @@ final class KanbanBrowserService: @unchecked Sendable {
         return taskID
     }
 
-    func addComment(connection: ConnectionProfile, taskID: String, body: String) async throws {
+    func addComment(connection: ConnectionProfile, boardSlug: String, taskID: String, body: String) async throws {
         _ = try await performMutation(
             connection: connection,
             request: KanbanMutationRequest(
                 kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
                 author: connection.resolvedHermesProfileName,
                 action: "comment",
                 taskID: taskID,
@@ -89,11 +176,12 @@ final class KanbanBrowserService: @unchecked Sendable {
         )
     }
 
-    func assignTask(connection: ConnectionProfile, taskID: String, assignee: String?) async throws {
+    func assignTask(connection: ConnectionProfile, boardSlug: String, taskID: String, assignee: String?) async throws {
         _ = try await performMutation(
             connection: connection,
             request: KanbanMutationRequest(
                 kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
                 author: connection.resolvedHermesProfileName,
                 action: "assign",
                 taskID: taskID,
@@ -111,11 +199,12 @@ final class KanbanBrowserService: @unchecked Sendable {
         )
     }
 
-    func blockTask(connection: ConnectionProfile, taskID: String, reason: String?) async throws {
+    func blockTask(connection: ConnectionProfile, boardSlug: String, taskID: String, reason: String?) async throws {
         _ = try await performMutation(
             connection: connection,
             request: KanbanMutationRequest(
                 kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
                 author: connection.resolvedHermesProfileName,
                 action: "block",
                 taskID: taskID,
@@ -133,11 +222,12 @@ final class KanbanBrowserService: @unchecked Sendable {
         )
     }
 
-    func unblockTask(connection: ConnectionProfile, taskID: String) async throws {
+    func unblockTask(connection: ConnectionProfile, boardSlug: String, taskID: String) async throws {
         _ = try await performMutation(
             connection: connection,
             request: KanbanMutationRequest(
                 kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
                 author: connection.resolvedHermesProfileName,
                 action: "unblock",
                 taskID: taskID,
@@ -155,11 +245,12 @@ final class KanbanBrowserService: @unchecked Sendable {
         )
     }
 
-    func completeTask(connection: ConnectionProfile, taskID: String, result: String?) async throws {
+    func completeTask(connection: ConnectionProfile, boardSlug: String, taskID: String, result: String?) async throws {
         _ = try await performMutation(
             connection: connection,
             request: KanbanMutationRequest(
                 kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
                 author: connection.resolvedHermesProfileName,
                 action: "complete",
                 taskID: taskID,
@@ -177,11 +268,12 @@ final class KanbanBrowserService: @unchecked Sendable {
         )
     }
 
-    func archiveTask(connection: ConnectionProfile, taskID: String) async throws {
+    func archiveTask(connection: ConnectionProfile, boardSlug: String, taskID: String) async throws {
         _ = try await performMutation(
             connection: connection,
             request: KanbanMutationRequest(
                 kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
                 author: connection.resolvedHermesProfileName,
                 action: "archive",
                 taskID: taskID,
@@ -199,11 +291,12 @@ final class KanbanBrowserService: @unchecked Sendable {
         )
     }
 
-    func deleteTask(connection: ConnectionProfile, taskID: String) async throws {
+    func deleteTask(connection: ConnectionProfile, boardSlug: String, taskID: String) async throws {
         _ = try await performMutation(
             connection: connection,
             request: KanbanMutationRequest(
                 kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
                 author: connection.resolvedHermesProfileName,
                 action: "delete",
                 taskID: taskID,
@@ -221,11 +314,12 @@ final class KanbanBrowserService: @unchecked Sendable {
         )
     }
 
-    func dispatchNow(connection: ConnectionProfile, maxSpawn: Int = 8) async throws -> KanbanDispatchResult? {
+    func dispatchNow(connection: ConnectionProfile, boardSlug: String, maxSpawn: Int = 8) async throws -> KanbanDispatchResult? {
         try await performMutation(
             connection: connection,
             request: KanbanMutationRequest(
                 kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
                 author: connection.resolvedHermesProfileName,
                 action: "dispatch",
                 taskID: nil,
@@ -255,11 +349,28 @@ final class KanbanBrowserService: @unchecked Sendable {
         )
     }
 
+    private var boardsBody: String {
+        kanbanPythonHelpers + """
+
+        try:
+            response = list_boards_response(include_archived=bool(payload.get("include_archived")))
+            print(json.dumps({
+                "ok": True,
+                "boards": response.get("boards", []),
+                "current": response.get("current"),
+                "supports_board_management": response.get("supports_board_management", False),
+            }, ensure_ascii=False))
+        except Exception as exc:
+            fail(f"Unable to load remote Hermes Kanban boards: {exc}")
+        """
+    }
+
     private var boardBody: String {
         kanbanPythonHelpers + """
 
         try:
-            board = load_board(include_archived=bool(payload.get("include_archived")))
+            board_slug = requested_board_slug()
+            board = load_board(board_slug, include_archived=bool(payload.get("include_archived")))
             print(json.dumps({
                 "ok": True,
                 "board": board,
@@ -273,10 +384,11 @@ final class KanbanBrowserService: @unchecked Sendable {
         kanbanPythonHelpers + """
 
         try:
+            board_slug = requested_board_slug()
             task_id = normalize_text(payload.get("task_id"))
             if not task_id:
                 fail("The Kanban task ID is required.")
-            detail = load_task_detail(task_id)
+            detail = load_task_detail(task_id, board_slug)
             if detail is None:
                 fail(f"No such Kanban task: {task_id}")
             print(json.dumps({
@@ -288,11 +400,110 @@ final class KanbanBrowserService: @unchecked Sendable {
         """
     }
 
+    private var createBoardBody: String {
+        kanbanPythonHelpers + """
+
+        try:
+            kb = import_kanban_module(required=True)
+            require_board_api(kb, "create Kanban boards")
+            if not hasattr(kb, "create_board"):
+                fail("This Hermes Agent build does not support creating Kanban boards. Run `hermes update` on the host.")
+            slug = normalize_board_slug(payload.get("slug"))
+            if not slug:
+                fail("Board slug is required.")
+            meta = kb.create_board(
+                slug,
+                name=normalize_text(payload.get("name")),
+                description=normalize_text(payload.get("description")),
+                icon=normalize_text(payload.get("icon")),
+                color=normalize_text(payload.get("color")),
+            )
+            if bool(payload.get("switch_after_create")):
+                try_set_current_board(kb, meta.get("slug") or slug)
+            board = hydrate_board_metadata(meta, kb)
+            print(json.dumps({
+                "ok": True,
+                "board": board,
+                "current": current_board_slug(kb),
+            }, ensure_ascii=False))
+        except Exception as exc:
+            fail(f"Unable to create the remote Hermes Kanban board: {exc}")
+        """
+    }
+
+    private var archiveBoardBody: String {
+        kanbanPythonHelpers + """
+
+        try:
+            kb = import_kanban_module(required=True)
+            require_board_api(kb, "archive Kanban boards")
+            if not hasattr(kb, "remove_board"):
+                fail("This Hermes Agent build does not support archiving Kanban boards. Run `hermes update` on the host.")
+            board_slug = requested_board_slug()
+            if board_slug == DEFAULT_BOARD:
+                fail("The default Kanban board cannot be archived.")
+            if not board_exists(board_slug, kb):
+                fail(f"No such Kanban board: {board_slug}")
+            result = kb.remove_board(board_slug, archive=True)
+            print(json.dumps({
+                "ok": True,
+                "result": result,
+                "current": current_board_slug(kb),
+            }, ensure_ascii=False))
+        except Exception as exc:
+            fail(f"Unable to archive the remote Hermes Kanban board: {exc}")
+        """
+    }
+
+    private var homeSubscriptionBody: String {
+        kanbanPythonHelpers + """
+
+        try:
+            board_slug = requested_board_slug()
+            task_id = normalize_text(payload.get("task_id"))
+            platform = normalize_text(payload.get("platform"))
+            if not task_id:
+                fail("The Kanban task ID is required.")
+            if not platform:
+                fail("The gateway platform is required.")
+            home = home_channel_for_platform(platform)
+            if home is None:
+                fail(f"No home channel configured for platform {platform!r}.")
+            db_path = kanban_db_path(board_slug)
+            if not db_path.exists():
+                fail(f"No such Kanban task: {task_id}")
+            kb = import_kanban_module(required=False)
+            conn = connect_for_board(kb, board_slug, writable=True)
+            try:
+                if get_task_any(kb, conn, task_id) is None:
+                    fail(f"No such Kanban task: {task_id}")
+                set_home_subscription(
+                    kb,
+                    conn,
+                    task_id,
+                    home,
+                    subscribed=bool(payload.get("subscribed")),
+                )
+            finally:
+                conn.close()
+            detail = load_task_detail(task_id, board_slug)
+            print(json.dumps({
+                "ok": True,
+                "task_id": task_id,
+                "detail": detail,
+                "message": "Home channel subscription updated.",
+            }, ensure_ascii=False))
+        except Exception as exc:
+            fail(f"Unable to update Kanban home-channel subscription: {exc}")
+        """
+    }
+
     private var mutationBody: String {
         kanbanPythonHelpers + """
 
         def mutation_result(message=None, task_id=None, dispatch=None):
-            detail = load_task_detail(task_id) if task_id else None
+            board_slug = requested_board_slug()
+            detail = load_task_detail(task_id, board_slug) if task_id else None
             print(json.dumps({
                 "ok": True,
                 "message": message,
@@ -303,11 +514,12 @@ final class KanbanBrowserService: @unchecked Sendable {
 
         def perform_with_module(action, task_id, author):
             kb = import_kanban_module(required=True)
-            db_path = kanban_db_path()
+            board_slug = requested_board_slug()
+            db_path = kanban_db_path(board_slug)
             if action == "delete" and not db_path.exists():
                 fail(f"No such Kanban task: {task_id}")
             os.environ["HERMES_HOME"] = str(kanban_home_path())
-            with kb.connect(db_path) as conn:
+            with connect_for_board(kb, board_slug, writable=True) as conn:
                 if action == "create":
                     title = normalize_text(payload.get("title"))
                     if not title:
@@ -375,10 +587,19 @@ final class KanbanBrowserService: @unchecked Sendable {
                     return ("Task deleted.", None, None)
 
                 if action == "dispatch":
-                    res = kb.dispatch_once(
-                        conn,
-                        max_spawn=int(payload.get("max_spawn") or 8),
-                    )
+                    if supports_keyword(kb.dispatch_once, "board"):
+                        res = kb.dispatch_once(
+                            conn,
+                            max_spawn=int(payload.get("max_spawn") or 8),
+                            board=board_slug,
+                        )
+                    else:
+                        if board_slug != DEFAULT_BOARD:
+                            fail("This Hermes Agent build does not support multiple Kanban boards. Run `hermes update` on the host.")
+                        res = kb.dispatch_once(
+                            conn,
+                            max_spawn=int(payload.get("max_spawn") or 8),
+                        )
                     dispatch = {
                         "reclaimed": int(getattr(res, "reclaimed", 0) or 0),
                         "crashed": list(getattr(res, "crashed", []) or []),
@@ -396,11 +617,12 @@ final class KanbanBrowserService: @unchecked Sendable {
             fail(f"Unsupported Kanban action: {action}")
 
         def perform_with_cli(action, task_id, author):
+            board_slug = requested_board_slug()
             if action == "create":
                 title = normalize_text(payload.get("title"))
                 if not title:
                     fail("Task title is required.")
-                args = ["kanban", "create", "--json", "--created-by", author]
+                args = kanban_cli_args(board_slug, ["create", "--json", "--created-by", author])
                 body = normalize_text(payload.get("body"))
                 if body:
                     args.extend(["--body", body])
@@ -430,28 +652,28 @@ final class KanbanBrowserService: @unchecked Sendable {
                 text = normalize_text(payload.get("text"))
                 if not text:
                     fail("Comment text is required.")
-                run_hermes_cli(["kanban", "comment", "--author", author, task_id, text])
+                run_hermes_cli(kanban_cli_args(board_slug, ["comment", "--author", author, task_id, text]))
                 return ("Comment added.", task_id, None)
 
             if action == "assign":
                 assignee = normalize_text(payload.get("assignee")) or "none"
-                run_hermes_cli(["kanban", "assign", task_id, assignee])
+                run_hermes_cli(kanban_cli_args(board_slug, ["assign", task_id, assignee]))
                 return ("Task assigned.", task_id, None)
 
             if action == "block":
                 reason = normalize_text(payload.get("text"))
-                args = ["kanban", "block", task_id]
+                args = kanban_cli_args(board_slug, ["block", task_id])
                 if reason:
                     args.append(reason)
                 run_hermes_cli(args)
                 return ("Task blocked.", task_id, None)
 
             if action == "unblock":
-                run_hermes_cli(["kanban", "unblock", task_id])
+                run_hermes_cli(kanban_cli_args(board_slug, ["unblock", task_id]))
                 return ("Task unblocked.", task_id, None)
 
             if action == "complete":
-                args = ["kanban", "complete", task_id]
+                args = kanban_cli_args(board_slug, ["complete", task_id])
                 result = normalize_text(payload.get("result"))
                 if result:
                     args.extend(["--result", result])
@@ -459,11 +681,11 @@ final class KanbanBrowserService: @unchecked Sendable {
                 return ("Task completed.", task_id, None)
 
             if action == "archive":
-                run_hermes_cli(["kanban", "archive", task_id])
+                run_hermes_cli(kanban_cli_args(board_slug, ["archive", task_id]))
                 return ("Task archived.", task_id, None)
 
             if action == "delete":
-                db_path = kanban_db_path()
+                db_path = kanban_db_path(board_slug)
                 if not db_path.exists():
                     fail(f"No such Kanban task: {task_id}")
                 conn = sqlite3.connect(db_path)
@@ -478,7 +700,7 @@ final class KanbanBrowserService: @unchecked Sendable {
 
             if action == "dispatch":
                 data = run_hermes_cli(
-                    ["kanban", "dispatch", "--max", str(int(payload.get("max_spawn") or 8)), "--json"],
+                    kanban_cli_args(board_slug, ["dispatch", "--max", str(int(payload.get("max_spawn") or 8)), "--json"]),
                     expect_json=True,
                 )
                 return ("Dispatcher nudged.", None, data)
@@ -505,21 +727,257 @@ final class KanbanBrowserService: @unchecked Sendable {
 
     private var kanbanPythonHelpers: String {
         """
+        import inspect
         import json
         import os
         import pathlib
+        import re
+        import shlex
         import shutil
         import sqlite3
         import subprocess
         import sys
+        import time
+
+        DEFAULT_BOARD = "default"
+        _BOARD_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9\\-_]{0,63}$")
 
         def kanban_home_path():
             home = pathlib.Path.home()
             requested = expand_remote_path(payload.get("kanban_home") or "~/.hermes", home)
             return requested or (home / ".hermes")
 
-        def kanban_db_path():
-            return kanban_home_path() / "kanban.db"
+        def normalize_board_slug(slug):
+            if slug is None:
+                return None
+            value = str(slug).strip().lower()
+            if not value:
+                return None
+            if not _BOARD_SLUG_RE.match(value):
+                fail(
+                    f"Invalid Kanban board slug {slug!r}: use 1-64 lowercase letters, "
+                    "numbers, hyphens, or underscores."
+                )
+            return value
+
+        def requested_board_slug():
+            return normalize_board_slug(payload.get("board_slug")) or DEFAULT_BOARD
+
+        def board_dir(board_slug=None):
+            return kanban_home_path() / "kanban" / "boards" / (normalize_board_slug(board_slug) or DEFAULT_BOARD)
+
+        def current_board_file():
+            return kanban_home_path() / "kanban" / "current"
+
+        def current_board_slug(kb=None):
+            if kb is not None and hasattr(kb, "get_current_board"):
+                try:
+                    return normalize_board_slug(kb.get_current_board()) or DEFAULT_BOARD
+                except Exception:
+                    pass
+            try:
+                path = current_board_file()
+                if path.exists():
+                    return normalize_board_slug(path.read_text(encoding="utf-8")) or DEFAULT_BOARD
+            except Exception:
+                pass
+            return DEFAULT_BOARD
+
+        def try_set_current_board(kb, board_slug):
+            normalized = normalize_board_slug(board_slug) or DEFAULT_BOARD
+            if kb is not None and hasattr(kb, "set_current_board"):
+                kb.set_current_board(normalized)
+                return
+            path = current_board_file()
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(normalized + "\\n", encoding="utf-8")
+
+        def kanban_db_path(board_slug=None):
+            normalized = normalize_board_slug(board_slug) or DEFAULT_BOARD
+            if normalized == DEFAULT_BOARD:
+                return kanban_home_path() / "kanban.db"
+            return board_dir(normalized) / "kanban.db"
+
+        def board_metadata_path(board_slug=None):
+            return board_dir(board_slug) / "board.json"
+
+        def worker_log_path(task_id, board_slug=None):
+            normalized = normalize_board_slug(board_slug) or DEFAULT_BOARD
+            if normalized == DEFAULT_BOARD:
+                return kanban_home_path() / "kanban" / "logs" / f"{task_id}.log"
+            return board_dir(normalized) / "logs" / f"{task_id}.log"
+
+        def default_board_display_name(slug):
+            parts = [part.capitalize() for part in str(slug).replace("_", "-").split("-") if part]
+            return " ".join(parts) or str(slug)
+
+        def read_board_metadata_direct(board_slug=None):
+            normalized = normalize_board_slug(board_slug) or DEFAULT_BOARD
+            meta = {
+                "slug": normalized,
+                "name": default_board_display_name(normalized),
+                "description": "",
+                "icon": "",
+                "color": "",
+                "created_at": None,
+                "archived": False,
+            }
+            try:
+                path = board_metadata_path(normalized)
+                if path.exists():
+                    raw = json.loads(path.read_text(encoding="utf-8"))
+                    if isinstance(raw, dict):
+                        raw["slug"] = normalized
+                        meta.update(raw)
+            except Exception:
+                pass
+            meta["db_path"] = str(kanban_db_path(normalized))
+            return meta
+
+        def board_exists(board_slug, kb=None):
+            normalized = normalize_board_slug(board_slug) or DEFAULT_BOARD
+            if normalized == DEFAULT_BOARD:
+                return True
+            if kb is not None and hasattr(kb, "board_exists"):
+                try:
+                    return bool(kb.board_exists(normalized))
+                except Exception:
+                    pass
+            directory = board_dir(normalized)
+            return directory.is_dir() or (directory / "kanban.db").exists()
+
+        def supports_keyword(function, keyword):
+            try:
+                return keyword in inspect.signature(function).parameters
+            except Exception:
+                return False
+
+        def require_board_api(kb, operation):
+            if kb is None or not hasattr(kb, "list_boards"):
+                fail(f"This Hermes Agent build does not support {operation}. Run `hermes update` on the host.")
+
+        def connect_for_board(kb, board_slug, writable=False):
+            normalized = normalize_board_slug(board_slug) or DEFAULT_BOARD
+            if kb is not None:
+                if supports_keyword(kb.connect, "board"):
+                    return kb.connect(board=normalized)
+                if normalized != DEFAULT_BOARD:
+                    fail("This Hermes Agent build does not support multiple Kanban boards. Run `hermes update` on the host.")
+                return kb.connect(kanban_db_path(normalized))
+
+            db_path = kanban_db_path(normalized)
+            if writable:
+                db_path.parent.mkdir(parents=True, exist_ok=True)
+                conn = sqlite3.connect(str(db_path), timeout=30)
+                conn.row_factory = sqlite3.Row
+                return conn
+
+            conn = connect_sqlite_readonly(db_path)
+            conn.row_factory = sqlite3.Row
+            return conn
+
+        def kanban_cli_args(board_slug, tail):
+            normalized = normalize_board_slug(board_slug) or DEFAULT_BOARD
+            args = ["kanban"]
+            if normalized != DEFAULT_BOARD:
+                args.extend(["--board", normalized])
+            args.extend(list(tail))
+            return args
+
+        def board_counts(board_slug):
+            path = kanban_db_path(board_slug)
+            if not path.exists():
+                return {}
+            conn = None
+            try:
+                conn = connect_sqlite_readonly(path)
+                conn.row_factory = sqlite3.Row
+                if not table_exists(conn, "tasks"):
+                    return {}
+                rows = conn.execute("SELECT status, COUNT(*) AS n FROM tasks GROUP BY status").fetchall()
+                return {row["status"]: int(row["n"] or 0) for row in rows}
+            except Exception:
+                return {}
+            finally:
+                if conn is not None:
+                    conn.close()
+
+        def hydrate_board_metadata(meta, kb=None):
+            board = dict(meta or {})
+            slug = normalize_board_slug(board.get("slug")) or DEFAULT_BOARD
+            board["slug"] = slug
+            if not board.get("name"):
+                board["name"] = default_board_display_name(slug)
+            if "archived" not in board:
+                board["archived"] = False
+            try:
+                path = None
+                if kb is not None and hasattr(kb, "kanban_db_path"):
+                    if supports_keyword(kb.kanban_db_path, "board"):
+                        path = kb.kanban_db_path(board=slug)
+                    elif slug == DEFAULT_BOARD:
+                        path = kb.kanban_db_path()
+                if path is None:
+                    path = kanban_db_path(slug)
+                board["db_path"] = tilde(pathlib.Path(path), pathlib.Path.home())
+            except Exception:
+                board["db_path"] = tilde(kanban_db_path(slug), pathlib.Path.home())
+            counts = board_counts(slug)
+            board["counts"] = counts
+            board["total"] = sum(counts.values())
+            board["is_current"] = slug == current_board_slug(kb)
+            return board
+
+        def list_boards_response(include_archived=False):
+            kb = import_kanban_module(required=False)
+            entries = []
+            seen = set()
+            supports_board_management = bool(
+                kb is not None
+                and hasattr(kb, "list_boards")
+                and hasattr(kb, "create_board")
+                and hasattr(kb, "remove_board")
+                and hasattr(kb, "kanban_db_path")
+                and supports_keyword(kb.kanban_db_path, "board")
+                and supports_keyword(kb.connect, "board")
+            )
+            if kb is not None and hasattr(kb, "list_boards"):
+                try:
+                    entries = [hydrate_board_metadata(item, kb) for item in kb.list_boards(include_archived=bool(include_archived))]
+                    seen = {item["slug"] for item in entries}
+                except Exception:
+                    entries = []
+                    seen = set()
+
+            if not entries:
+                default_meta = hydrate_board_metadata(read_board_metadata_direct(DEFAULT_BOARD), kb)
+                entries.append(default_meta)
+                seen.add(DEFAULT_BOARD)
+                root = kanban_home_path() / "kanban" / "boards"
+                if root.is_dir():
+                    for child in sorted(root.iterdir(), key=lambda item: item.name.lower()):
+                        if not child.is_dir():
+                            continue
+                        slug = str(child.name).strip().lower()
+                        if not _BOARD_SLUG_RE.match(slug):
+                            continue
+                        if not slug or slug in seen:
+                            continue
+                        has_board = (child / "kanban.db").exists() or (child / "board.json").exists()
+                        if not has_board:
+                            continue
+                        meta = hydrate_board_metadata(read_board_metadata_direct(slug), kb)
+                        if meta.get("archived") and not include_archived:
+                            continue
+                        entries.append(meta)
+                        seen.add(slug)
+
+            entries.sort(key=lambda item: (0 if item.get("slug") == DEFAULT_BOARD else 1, str(item.get("slug") or "")))
+            return {
+                "boards": entries,
+                "current": current_board_slug(kb),
+                "supports_board_management": supports_board_management,
+            }
 
         def find_hermes_binary():
             candidate = shutil.which("hermes")
@@ -540,6 +998,7 @@ final class KanbanBrowserService: @unchecked Sendable {
             home = pathlib.Path.home()
             env = os.environ.copy()
             env["HERMES_HOME"] = str(kanban_home_path())
+            env["HERMES_KANBAN_HOME"] = str(kanban_home_path())
             path_entries = [
                 str(home / ".local" / "bin"),
                 str(home / ".hermes" / "hermes-agent" / "venv" / "bin"),
@@ -566,18 +1025,81 @@ final class KanbanBrowserService: @unchecked Sendable {
             except Exception as exc:
                 fail(f"Hermes Kanban command returned invalid JSON: {exc}")
 
+        def add_hermes_agent_import_paths():
+            home = pathlib.Path.home()
+            candidates = [
+                home / ".hermes" / "hermes-agent",
+                kanban_home_path() / "hermes-agent",
+            ]
+            for agent_root in list(candidates):
+                venv_lib = agent_root / "venv" / "lib"
+                if venv_lib.is_dir():
+                    for site_packages in sorted(venv_lib.glob("python*/site-packages")):
+                        candidates.append(site_packages)
+            for candidate in candidates:
+                try:
+                    path = str(candidate)
+                except Exception:
+                    continue
+                if path and pathlib.Path(path).exists() and path not in sys.path:
+                    sys.path.insert(0, path)
+
+        def load_hermes_env_file():
+            home = pathlib.Path.home()
+            seen = set()
+            for path in [kanban_home_path() / ".env", home / ".hermes" / ".env"]:
+                if path in seen:
+                    continue
+                seen.add(path)
+                if not path.exists():
+                    continue
+                try:
+                    lines = path.read_text(encoding="utf-8").splitlines()
+                except Exception:
+                    continue
+                for line in lines:
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#"):
+                        continue
+                    try:
+                        parts = shlex.split(stripped, comments=True, posix=True)
+                    except Exception:
+                        continue
+                    if not parts:
+                        continue
+                    if parts[0] == "export":
+                        parts = parts[1:]
+                    if len(parts) != 1 or "=" not in parts[0]:
+                        continue
+                    key, value = parts[0].split("=", 1)
+                    key = key.strip()
+                    if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", key):
+                        continue
+                    if key not in os.environ:
+                        os.environ[key] = value
+
         def import_kanban_module(required=False):
             os.environ["HERMES_HOME"] = str(kanban_home_path())
+            os.environ["HERMES_KANBAN_HOME"] = str(kanban_home_path())
+            load_hermes_env_file()
+            try:
+                import hermes_cli.kanban_db as kb
+                return kb
+            except Exception as exc:
+                first_error = exc
+            add_hermes_agent_import_paths()
             try:
                 import hermes_cli.kanban_db as kb
                 return kb
             except Exception as exc:
                 if required:
-                    raise ImportError(str(exc))
+                    raise ImportError(f"{exc}; initial import failed with: {first_error}")
                 return None
 
         def dispatcher_status():
             os.environ["HERMES_HOME"] = str(kanban_home_path())
+            add_hermes_agent_import_paths()
+            load_hermes_env_file()
             try:
                 import hermes_cli.kanban as kanban_cli
                 running, message = kanban_cli._check_dispatcher_presence()
@@ -590,6 +1112,128 @@ final class KanbanBrowserService: @unchecked Sendable {
                     "running": None,
                     "message": None,
                 }
+
+        def configured_home_channels():
+            try:
+                add_hermes_agent_import_paths()
+                load_hermes_env_file()
+                from gateway.config import load_gateway_config
+                gateway_config = load_gateway_config()
+            except Exception:
+                return []
+            result = []
+            try:
+                platform_items = gateway_config.platforms.items()
+            except Exception:
+                platform_items = []
+            for platform, platform_config in platform_items:
+                if not platform_config:
+                    continue
+                home_channel = getattr(platform_config, "home_channel", None)
+                if not home_channel:
+                    continue
+                platform_name = getattr(platform, "value", str(platform))
+                result.append({
+                    "platform": platform_name,
+                    "chat_id": str(getattr(home_channel, "chat_id", "") or ""),
+                    "thread_id": str(getattr(home_channel, "thread_id", "") or ""),
+                    "name": str(getattr(home_channel, "name", "") or "Home"),
+                    "subscribed": False,
+                })
+            result.sort(key=lambda item: item["platform"])
+            return result
+
+        def home_channel_for_platform(platform):
+            normalized = normalize_text(platform)
+            for home in configured_home_channels():
+                if home.get("platform") == normalized:
+                    return home
+            return None
+
+        def home_sub_matches(sub, home):
+            return (
+                str(sub.get("platform") or "") == str(home.get("platform") or "")
+                and str(sub.get("chat_id") or "") == str(home.get("chat_id") or "")
+                and str(sub.get("thread_id") or "") == str(home.get("thread_id") or "")
+            )
+
+        def direct_notify_subs(conn, task_id):
+            if not conn or not task_id or not table_exists(conn, "kanban_notify_subs"):
+                return []
+            rows = conn.execute(
+                "SELECT task_id, platform, chat_id, thread_id, user_id, created_at, last_event_id "
+                "FROM kanban_notify_subs WHERE task_id = ?",
+                (task_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+
+        def home_channels_for_task(conn, task_id):
+            homes = configured_home_channels()
+            if not homes:
+                return []
+            subscribed = direct_notify_subs(conn, task_id)
+            result = []
+            for home in homes:
+                item = dict(home)
+                item["subscribed"] = any(home_sub_matches(sub, home) for sub in subscribed)
+                result.append(item)
+            return result
+
+        def ensure_notify_subs_table(conn):
+            if table_exists(conn, "kanban_notify_subs"):
+                return
+            fail("This Hermes Agent build does not support Kanban home-channel subscriptions. Run `hermes update` on the host.")
+
+        def get_task_any(kb, conn, task_id):
+            if not conn or not task_id:
+                return None
+            if kb is not None and hasattr(kb, "get_task"):
+                try:
+                    return kb.get_task(conn, task_id)
+                except Exception:
+                    pass
+            if not table_exists(conn, "tasks"):
+                return None
+            return conn.execute("SELECT id FROM tasks WHERE id = ?", (task_id,)).fetchone()
+
+        def set_home_subscription(kb, conn, task_id, home, subscribed):
+            ensure_notify_subs_table(conn)
+            platform = home["platform"]
+            chat_id = home["chat_id"]
+            thread_id = home.get("thread_id") or ""
+            if subscribed:
+                if kb is not None and hasattr(kb, "add_notify_sub"):
+                    kb.add_notify_sub(
+                        conn,
+                        task_id=task_id,
+                        platform=platform,
+                        chat_id=chat_id,
+                        thread_id=thread_id or None,
+                    )
+                    return
+                conn.execute(
+                    "INSERT OR IGNORE INTO kanban_notify_subs "
+                    "(task_id, platform, chat_id, thread_id, user_id, created_at, last_event_id) "
+                    "VALUES (?, ?, ?, ?, NULL, ?, 0)",
+                    (task_id, platform, chat_id, thread_id, int(time.time())),
+                )
+                conn.commit()
+                return
+
+            if kb is not None and hasattr(kb, "remove_notify_sub"):
+                kb.remove_notify_sub(
+                    conn,
+                    task_id=task_id,
+                    platform=platform,
+                    chat_id=chat_id,
+                    thread_id=thread_id or None,
+                )
+                return
+            conn.execute(
+                "DELETE FROM kanban_notify_subs WHERE task_id = ? AND platform = ? AND chat_id = ? AND thread_id = ?",
+                (task_id, platform, chat_id, thread_id),
+            )
+            conn.commit()
 
         def table_exists(conn, table_name):
             row = conn.execute(
@@ -914,8 +1558,9 @@ final class KanbanBrowserService: @unchecked Sendable {
             ).fetchall()
             return [row["tenant"] for row in rows]
 
-        def load_board(include_archived=False):
-            db_path = kanban_db_path()
+        def load_board(board_slug, include_archived=False):
+            board_slug = normalize_board_slug(board_slug) or DEFAULT_BOARD
+            db_path = kanban_db_path(board_slug)
             has_cli = find_hermes_binary() is not None
             kb = import_kanban_module(required=False)
             has_module = kb is not None
@@ -938,7 +1583,7 @@ final class KanbanBrowserService: @unchecked Sendable {
             conn = None
             try:
                 if kb is not None:
-                    conn = kb.connect(db_path)
+                    conn = connect_for_board(kb, board_slug, writable=False)
                     tasks = [
                         task_object_to_dict(task, conn)
                         for task in kb.list_tasks(conn, include_archived=include_archived)
@@ -1004,15 +1649,16 @@ final class KanbanBrowserService: @unchecked Sendable {
                 "ended_at": int_value(getattr(run, "ended_at", None)),
             }
 
-        def load_task_detail(task_id):
-            db_path = kanban_db_path()
+        def load_task_detail(task_id, board_slug):
+            board_slug = normalize_board_slug(board_slug) or DEFAULT_BOARD
+            db_path = kanban_db_path(board_slug)
             if not db_path.exists():
                 return None
             kb = import_kanban_module(required=False)
             conn = None
             try:
                 if kb is not None:
-                    conn = kb.connect(db_path)
+                    conn = connect_for_board(kb, board_slug, writable=False)
                     task = kb.get_task(conn, task_id)
                     if task is None:
                         return None
@@ -1023,7 +1669,10 @@ final class KanbanBrowserService: @unchecked Sendable {
                     runs = [run_to_dict(item) for item in kb.list_runs(conn, task_id)]
                     worker_log = None
                     try:
-                        worker_log = kb.read_worker_log(task_id, tail_bytes=65536)
+                        if supports_keyword(kb.read_worker_log, "board"):
+                            worker_log = kb.read_worker_log(task_id, tail_bytes=65536, board=board_slug)
+                        else:
+                            worker_log = kb.read_worker_log(task_id, tail_bytes=65536)
                     except Exception:
                         worker_log = None
                     return {
@@ -1034,6 +1683,7 @@ final class KanbanBrowserService: @unchecked Sendable {
                         "events": events,
                         "runs": runs,
                         "worker_log": worker_log,
+                        "home_channels": home_channels_for_task(conn, task_id),
                     }
 
                 conn = connect_sqlite_readonly(db_path)
@@ -1092,7 +1742,7 @@ final class KanbanBrowserService: @unchecked Sendable {
                             "started_at": int_value(item["started_at"], 0),
                             "ended_at": int_value(item["ended_at"]),
                         })
-                log_path = kanban_home_path() / "kanban" / "logs" / f"{task_id}.log"
+                log_path = worker_log_path(task_id, board_slug)
                 worker_log = None
                 if log_path.exists():
                     try:
@@ -1108,6 +1758,7 @@ final class KanbanBrowserService: @unchecked Sendable {
                     "events": events,
                     "runs": runs,
                     "worker_log": worker_log,
+                    "home_channels": home_channels_for_task(conn, task_id),
                 }
             finally:
                 if conn is not None:
@@ -1116,7 +1767,7 @@ final class KanbanBrowserService: @unchecked Sendable {
     }
 }
 
-private struct KanbanBoardRequest: Encodable {
+private struct KanbanBoardsRequest: Encodable {
     let kanbanHome: String
     let includeArchived: Bool
 
@@ -1126,18 +1777,79 @@ private struct KanbanBoardRequest: Encodable {
     }
 }
 
+private struct KanbanBoardRequest: Encodable {
+    let kanbanHome: String
+    let boardSlug: String
+    let includeArchived: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case kanbanHome = "kanban_home"
+        case boardSlug = "board_slug"
+        case includeArchived = "include_archived"
+    }
+}
+
 private struct KanbanTaskDetailRequest: Encodable {
     let kanbanHome: String
+    let boardSlug: String
     let taskID: String
 
     enum CodingKeys: String, CodingKey {
         case kanbanHome = "kanban_home"
+        case boardSlug = "board_slug"
         case taskID = "task_id"
+    }
+}
+
+private struct KanbanBoardCreateRequest: Encodable {
+    let kanbanHome: String
+    let slug: String
+    let name: String?
+    let description: String?
+    let icon: String?
+    let color: String?
+    let switchAfterCreate: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case kanbanHome = "kanban_home"
+        case slug
+        case name
+        case description
+        case icon
+        case color
+        case switchAfterCreate = "switch_after_create"
+    }
+}
+
+private struct KanbanBoardArchiveRequest: Encodable {
+    let kanbanHome: String
+    let boardSlug: String
+
+    enum CodingKeys: String, CodingKey {
+        case kanbanHome = "kanban_home"
+        case boardSlug = "board_slug"
+    }
+}
+
+private struct KanbanHomeSubscriptionRequest: Encodable {
+    let kanbanHome: String
+    let boardSlug: String
+    let taskID: String
+    let platform: String
+    let subscribed: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case kanbanHome = "kanban_home"
+        case boardSlug = "board_slug"
+        case taskID = "task_id"
+        case platform
+        case subscribed
     }
 }
 
 private struct KanbanMutationRequest: Encodable {
     let kanbanHome: String
+    let boardSlug: String
     let author: String
     let action: String
     let taskID: String?
@@ -1154,6 +1866,7 @@ private struct KanbanMutationRequest: Encodable {
 
     enum CodingKeys: String, CodingKey {
         case kanbanHome = "kanban_home"
+        case boardSlug = "board_slug"
         case author
         case action
         case taskID = "task_id"

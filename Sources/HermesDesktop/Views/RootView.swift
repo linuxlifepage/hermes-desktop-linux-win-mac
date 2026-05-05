@@ -3,6 +3,7 @@ import SwiftUI
 private let workbenchPrimaryColumnWidth: CGFloat = 460
 
 struct RootView: View {
+    @Environment(\.openURL) private var openURL
     @EnvironmentObject private var appState: AppState
     @State private var sessionsSplitLayout = HermesSplitLayout(
         minPrimaryWidth: workbenchPrimaryColumnWidth,
@@ -33,18 +34,31 @@ struct RootView: View {
 
                 Section(L10n.string("Sections")) {
                     ForEach(availableSections) { section in
-                        Label(section.title, systemImage: section.systemImage)
+                        SidebarSectionRow(section: section)
                             .tag(section)
                     }
                 }
             }
             .listStyle(.sidebar)
-            .frame(minWidth: 150, idealWidth: 170, maxWidth: 210)
+            .frame(minWidth: 160, idealWidth: 188, maxWidth: 220)
 
             detailView
                 .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity)
                 .layoutPriority(1)
                 .clipped()
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .automatic) {
+                Button {
+                    Task {
+                        await appState.refreshCurrentSectionFromCommand()
+                    }
+                } label: {
+                    Label(L10n.string("Refresh"), systemImage: "arrow.clockwise")
+                }
+                .disabled(!appState.canRefreshCurrentSection)
+                .help(L10n.string("Refresh Current Section"))
+            }
         }
         .overlay(alignment: .bottom) {
             if let statusMessage = appState.statusMessage {
@@ -72,6 +86,21 @@ struct RootView: View {
             }
         } message: {
             Text(L10n.string("USER.md, MEMORY.md, or SOUL.md has unsaved edits."))
+        }
+        .sheet(item: $appState.availableUpdate) { update in
+            UpdateAvailableSheet(
+                update: update,
+                openRelease: {
+                    appState.noteOpenedRelease(for: update)
+                    openURL(update.htmlURL)
+                },
+                dismiss: {
+                    appState.dismissAvailableUpdate()
+                }
+            )
+        }
+        .task {
+            await appState.checkForUpdatesAtLaunch()
         }
     }
 
@@ -136,6 +165,97 @@ struct RootView: View {
     }
 }
 
+private struct UpdateAvailableSheet: View {
+    let update: AvailableUpdate
+    let openRelease: () -> Void
+    let dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .font(.system(size: 32, weight: .medium))
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 42, height: 42)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(L10n.string("Hermes Desktop %@ is available", update.latestVersion))
+                        .font(.title3.weight(.semibold))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(
+                        L10n.string(
+                            "You are running %@. The latest GitHub release is %@.",
+                            update.currentVersion,
+                            update.latestVersion
+                        )
+                    )
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text(update.resolvedName)
+                    .font(.headline)
+                    .lineLimit(2)
+
+                if let releaseNotesPreview = update.releaseNotesPreview {
+                    ScrollView {
+                        Text(releaseNotesPreview)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                    .frame(maxHeight: 220)
+                } else {
+                    Text(L10n.string("Open the GitHub release to download the latest Hermes Desktop build."))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack {
+                Spacer()
+
+                Button(L10n.string("Not Now")) {
+                    dismiss()
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Button(L10n.string("Open Release")) {
+                    openRelease()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 480)
+    }
+}
+
+private struct SidebarSectionRow: View {
+    let section: AppSection
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: section.systemImage)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+
+            Text(section.title)
+                .font(.body)
+                .lineLimit(1)
+        }
+        .padding(.vertical, 1)
+        .help(section.title)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct WorkspaceSidebarCard: View {
     @EnvironmentObject private var appState: AppState
 
@@ -176,8 +296,8 @@ private struct WorkspaceSidebarCard: View {
                             .foregroundStyle(.secondary)
                     }
                     .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(.vertical, 7)
+                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(appState.isRefreshingOverview || appState.isBusy)

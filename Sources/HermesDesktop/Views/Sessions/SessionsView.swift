@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct SessionsView: View {
@@ -12,18 +13,12 @@ struct SessionsView: View {
                     title: "Sessions",
                     subtitle: "Browse the recent Hermes conversations discovered on the active host."
                 ) {
-                    HStack(spacing: 10) {
-                        HermesRefreshButton(isRefreshing: appState.isRefreshingSessions) {
-                            Task { await appState.refreshSessions(query: searchText) }
-                        }
-                        .disabled(appState.isLoadingSessions)
-
-                        HermesExpandableSearchField(
-                            text: $searchText,
-                            prompt: L10n.string("Search sessions"),
-                            expandedWidth: 220
-                        )
-                    }
+                    HermesExpandableSearchField(
+                        text: $searchText,
+                        prompt: L10n.string("Search sessions"),
+                        expandedWidth: 220,
+                        focusRequestID: appState.searchFocusRequestID
+                    )
                     .fixedSize(horizontal: true, vertical: false)
                 }
 
@@ -267,28 +262,42 @@ private struct SessionCardRow: View {
     let onTogglePin: () -> Void
     let onSelect: () -> Void
 
+    @State private var isHovering = false
+
     var body: some View {
         Button(action: onSelect) {
             content
                 .padding(.trailing, 34)
                 .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.vertical, 11)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(isSelected ? Color.accentColor.opacity(0.12) : Color.secondary.opacity(0.08))
+                    RoundedRectangle(cornerRadius: HermesTheme.rowCornerRadius, style: .continuous)
+                        .fill(isSelected ? HermesTheme.selectedFill : HermesTheme.rowFill)
                 )
                 .overlay {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.primary.opacity(isSelected ? 0.12 : 0.06), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: HermesTheme.rowCornerRadius, style: .continuous)
+                        .strokeBorder(isSelected ? HermesTheme.selectedStroke : HermesTheme.subtleStroke, lineWidth: 1)
                 }
-                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: HermesTheme.rowCornerRadius, style: .continuous))
         }
         .buttonStyle(.plain)
         .overlay(alignment: .topTrailing) {
-            pinButton
-                .padding(.top, 12)
-                .padding(.trailing, 14)
+            if isPinned || isSelected || isHovering {
+                pinButton
+                    .padding(.top, 10)
+                    .padding(.trailing, 14)
+                    .transition(.opacity)
+            }
+        }
+        .onHover { isHovering = $0 }
+        .contextMenu {
+            Button(pinHelpText, action: onTogglePin)
+
+            Button(L10n.string("Copy Session ID")) {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(session.id, forType: .string)
+            }
         }
     }
 
@@ -314,12 +323,12 @@ private struct SessionCardRow: View {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(session.resolvedTitle)
-                        .font(.headline)
+                        .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.primary)
                         .multilineTextAlignment(.leading)
 
                     Text(session.id)
-                        .font(.caption)
+                        .font(.system(.caption2, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
@@ -337,7 +346,7 @@ private struct SessionCardRow: View {
                 searchMatchPreview(searchMatch, snippet: snippet)
             } else if let preview = session.preview, !preview.isEmpty {
                 Text(preview)
-                    .font(.subheadline)
+                    .font(.callout)
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
