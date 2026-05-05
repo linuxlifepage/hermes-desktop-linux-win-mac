@@ -776,3 +776,8 @@
 "Select a skill to inspect its metadata, related assets and full SKILL.md content." = "选择一个技能以查看其元数据、相关资源和完整 SKILL.md 内容。";
 "Browse the Hermes skill library discovered on the active host." = "浏览在当前主机上发现的 Hermes 技能库。";
 "Loading skills…" = "正在加载技能…";
+"Parents" = "父任务";
+"%@ links" = "%@ 个链接";
+"Task description" = "任务描述";
+"t_parent_a, t_parent_b" = "t_parent_a, t_parent_b";
+"t_child_a, t_child_b" = "t_child_a, t_child_b";

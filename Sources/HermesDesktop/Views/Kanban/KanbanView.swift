@@ -483,6 +483,21 @@ struct KanbanView: View {
                 onAssign: { taskID, assignee in
                     await appState.assignKanbanTask(taskID: taskID, assignee: assignee)
                 },
+                onUpdateFields: { taskID, body, tenant, priority, skills in
+                    await appState.updateKanbanTaskFields(
+                        taskID: taskID,
+                        body: body,
+                        tenant: tenant,
+                        priority: priority,
+                        skills: skills
+                    )
+                },
+                onSetParents: { taskID, parentIDs in
+                    await appState.setKanbanTaskParents(taskID: taskID, parentIDs: parentIDs)
+                },
+                onSetChildren: { taskID, childIDs in
+                    await appState.setKanbanTaskChildren(taskID: taskID, childIDs: childIDs)
+                },
                 onComment: { taskID, comment in
                     await appState.addKanbanComment(taskID: taskID, body: comment)
                 },
@@ -670,6 +685,9 @@ private enum KanbanFilterOption: Hashable {
 }
 
 private enum KanbanActionKind: Hashable {
+    case details
+    case parents
+    case children
     case assign
     case comment
     case complete
@@ -1180,6 +1198,12 @@ private struct KanbanTaskEditorView: View {
                             TextField(L10n.string("deploy-check, release-notes"), text: $draft.skillsText)
                                 .textFieldStyle(.roundedBorder)
                         }
+
+                        KanbanFormField(label: "Parents") {
+                            TextField(L10n.string("t_parent_a, t_parent_b"), text: $draft.parentIDsText)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(.body, design: .monospaced))
+                        }
                     }
                 }
             }
@@ -1198,6 +1222,9 @@ private struct KanbanTaskDetailView: View {
     let assignees: [String]
     let onCreate: () -> Void
     let onAssign: (String, String?) async -> Void
+    let onUpdateFields: (String, String, String, Int, [String]) async -> Void
+    let onSetParents: (String, [String]) async -> Void
+    let onSetChildren: (String, [String]) async -> Void
     let onComment: (String, String) async -> Bool
     let onBlock: (String, String?) async -> Void
     let onUnblock: (String) async -> Void
@@ -1288,16 +1315,17 @@ private struct KanbanTaskDetailView: View {
             .padding(.vertical, 22)
         }
         .onChange(of: task?.id) { _, _ in
-            draft = KanbanActionDraft(
-                comment: "",
-                result: "",
-                blockReason: "",
-                assignee: task?.assignee ?? ""
-            )
+            resetDraft()
             expandedAction = nil
         }
+        .onChange(of: detail?.parentIDs) { _, _ in
+            resetDraft()
+        }
+        .onChange(of: detail?.childIDs) { _, _ in
+            resetDraft()
+        }
         .onAppear {
-            draft.assignee = task?.assignee ?? ""
+            resetDraft()
         }
         .alert(L10n.string("Archive this task?"), isPresented: $showArchiveConfirmation, presenting: task) { task in
             Button(L10n.string("Archive"), role: .destructive) {
@@ -1315,6 +1343,21 @@ private struct KanbanTaskDetailView: View {
         } message: { task in
             Text(L10n.string("“%@” will be permanently removed from the remote Kanban database, including comments, links, events, and run history. Remote workspace files are left untouched.", task.resolvedTitle))
         }
+    }
+
+    private func resetDraft() {
+        draft = KanbanActionDraft(
+            comment: "",
+            result: "",
+            blockReason: "",
+            assignee: task?.assignee ?? "",
+            body: task?.trimmedBody ?? "",
+            tenant: task?.tenant ?? "",
+            priority: task?.priority ?? 0,
+            skillsText: KanbanTaskDraft.listText(task?.skills ?? []),
+            parentIDsText: KanbanTaskDraft.listText(detail?.parentIDs ?? task?.parentIDs ?? []),
+            childIDsText: KanbanTaskDraft.listText(detail?.childIDs ?? task?.childIDs ?? [])
+        )
     }
 
     private func headerPanel(_ task: KanbanTask) -> some View {
@@ -1554,6 +1597,110 @@ private struct KanbanTaskDetailView: View {
         ) {
             VStack(alignment: .leading, spacing: 0) {
                 KanbanActionDisclosureRow(
+                    title: "Details",
+                    summary: "Edit body, tenant, priority, and skills",
+                    systemImage: "slider.horizontal.3",
+                    isExpanded: expandedAction == .details,
+                    isDisabled: operationInFlight,
+                    onToggle: { toggleAction(.details) }
+                ) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        KanbanFormField(label: "Body") {
+                            KanbanTextEditor(text: $draft.body, placeholder: L10n.string("Task description"))
+                        }
+
+                        HStack(alignment: .top, spacing: 12) {
+                            KanbanFormField(label: "Tenant") {
+                                TextField(L10n.string("optional"), text: $draft.tenant)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+
+                            KanbanFormField(label: "Priority") {
+                                TextField("0", value: $draft.priority, format: .number)
+                                    .textFieldStyle(.roundedBorder)
+                                    .frame(width: 96)
+                            }
+                        }
+
+                        KanbanFormField(label: "Skills") {
+                            TextField(L10n.string("deploy-check, release-notes"), text: $draft.skillsText)
+                                .textFieldStyle(.roundedBorder)
+                        }
+
+                        Button(L10n.string("Apply")) {
+                            Task {
+                                await onUpdateFields(
+                                    task.id,
+                                    draft.normalizedBodyForUpdate,
+                                    draft.normalizedTenantForUpdate,
+                                    draft.priority,
+                                    draft.skills
+                                )
+                                expandedAction = nil
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(operationInFlight || !detailsChanged(for: task))
+                    }
+                }
+
+                KanbanActionDivider()
+
+                if let detail {
+                    KanbanActionDisclosureRow(
+                        title: "Parents",
+                        summary: dependencySummary(detail.parentIDs),
+                        systemImage: "arrow.up.right.and.arrow.down.left.rectangle",
+                        isExpanded: expandedAction == .parents,
+                        isDisabled: operationInFlight,
+                        onToggle: { toggleAction(.parents) }
+                    ) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField(L10n.string("t_parent_a, t_parent_b"), text: $draft.parentIDsText)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(.body, design: .monospaced))
+
+                            Button(L10n.string("Apply")) {
+                                Task {
+                                    await onSetParents(task.id, draft.parentIDs)
+                                    expandedAction = nil
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(operationInFlight || draft.parentIDs == detail.parentIDs)
+                        }
+                    }
+
+                    KanbanActionDivider()
+
+                    KanbanActionDisclosureRow(
+                        title: "Children",
+                        summary: dependencySummary(detail.childIDs),
+                        systemImage: "point.3.connected.trianglepath.dotted",
+                        isExpanded: expandedAction == .children,
+                        isDisabled: operationInFlight,
+                        onToggle: { toggleAction(.children) }
+                    ) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField(L10n.string("t_child_a, t_child_b"), text: $draft.childIDsText)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(.body, design: .monospaced))
+
+                            Button(L10n.string("Apply")) {
+                                Task {
+                                    await onSetChildren(task.id, draft.childIDs)
+                                    expandedAction = nil
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(operationInFlight || draft.childIDs == detail.childIDs)
+                        }
+                    }
+
+                    KanbanActionDivider()
+                }
+
+                KanbanActionDisclosureRow(
                     title: "Assignee",
                     summary: task.assignee.map { "@\($0)" } ?? "Unassigned",
                     systemImage: "person.crop.circle",
@@ -1703,6 +1850,23 @@ private struct KanbanTaskDetailView: View {
                 }
             }
         }
+    }
+
+    private func detailsChanged(for task: KanbanTask) -> Bool {
+        draft.normalizedBodyForUpdate != (task.trimmedBody ?? "") ||
+            draft.normalizedTenantForUpdate != (task.tenant ?? "") ||
+            draft.priority != task.priority ||
+            draft.skills != task.skills
+    }
+
+    private func dependencySummary(_ ids: [String]) -> String {
+        if ids.isEmpty {
+            return L10n.string("None")
+        }
+        if ids.count == 1 {
+            return ids[0]
+        }
+        return L10n.string("%@ links", "\(ids.count)")
     }
 
     private func toggleAction(_ action: KanbanActionKind) {

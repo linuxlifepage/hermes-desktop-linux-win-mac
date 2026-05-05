@@ -281,6 +281,7 @@ struct KanbanModelsTests {
         draft.tenant = " desktop "
         draft.priority = 42
         draft.skillsText = "release-notes, docs, "
+        draft.parentIDsText = " t_parent_a, t_parent_b\n t_parent_a "
 
         #expect(draft.validationError == nil)
         #expect(draft.normalizedTitle == "Prepare changelog")
@@ -289,6 +290,7 @@ struct KanbanModelsTests {
         #expect(draft.normalizedTenant == "desktop")
         #expect(draft.priority == 42)
         #expect(draft.skills == ["release-notes", "docs"])
+        #expect(draft.parentIDs == ["t_parent_a", "t_parent_b"])
     }
 
     @Test

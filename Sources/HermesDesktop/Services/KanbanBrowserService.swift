@@ -142,7 +142,8 @@ final class KanbanBrowserService: @unchecked Sendable {
                 triage: draft.startsInTriage,
                 text: nil,
                 result: nil,
-                maxSpawn: nil
+                maxSpawn: nil,
+                parentIDs: draft.parentIDs
             )
         )
 
@@ -172,6 +173,85 @@ final class KanbanBrowserService: @unchecked Sendable {
                 text: body,
                 result: nil,
                 maxSpawn: nil
+            )
+        )
+    }
+
+    func updateTaskFields(
+        connection: ConnectionProfile,
+        boardSlug: String,
+        taskID: String,
+        body: String,
+        tenant: String,
+        priority: Int,
+        skills: [String]
+    ) async throws {
+        _ = try await performMutation(
+            connection: connection,
+            request: KanbanMutationRequest(
+                kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
+                author: connection.resolvedHermesProfileName,
+                action: "update_fields",
+                taskID: taskID,
+                title: nil,
+                body: body,
+                assignee: nil,
+                priority: priority,
+                tenant: tenant,
+                skills: skills,
+                triage: nil,
+                text: nil,
+                result: nil,
+                maxSpawn: nil
+            )
+        )
+    }
+
+    func setTaskParents(connection: ConnectionProfile, boardSlug: String, taskID: String, parentIDs: [String]) async throws {
+        _ = try await performMutation(
+            connection: connection,
+            request: KanbanMutationRequest(
+                kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
+                author: connection.resolvedHermesProfileName,
+                action: "set_parents",
+                taskID: taskID,
+                title: nil,
+                body: nil,
+                assignee: nil,
+                priority: nil,
+                tenant: nil,
+                skills: nil,
+                triage: nil,
+                text: nil,
+                result: nil,
+                maxSpawn: nil,
+                parentIDs: parentIDs
+            )
+        )
+    }
+
+    func setTaskChildren(connection: ConnectionProfile, boardSlug: String, taskID: String, childIDs: [String]) async throws {
+        _ = try await performMutation(
+            connection: connection,
+            request: KanbanMutationRequest(
+                kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
+                author: connection.resolvedHermesProfileName,
+                action: "set_children",
+                taskID: taskID,
+                title: nil,
+                body: nil,
+                assignee: nil,
+                priority: nil,
+                tenant: nil,
+                skills: nil,
+                triage: nil,
+                text: nil,
+                result: nil,
+                maxSpawn: nil,
+                childIDs: childIDs
             )
         )
     }
@@ -512,6 +592,149 @@ final class KanbanBrowserService: @unchecked Sendable {
                 "dispatch": dispatch,
             }, ensure_ascii=False))
 
+        def normalized_payload_list(name):
+            raw = payload.get(name) or []
+            if isinstance(raw, str):
+                raw = re.split(r"[\\s,]+", raw)
+            result = []
+            seen = set()
+            for item in raw:
+                value = normalize_text(item)
+                if not value or value in seen:
+                    continue
+                seen.add(value)
+                result.append(value)
+            return result
+
+        def normalized_skill_list():
+            result = []
+            seen = set()
+            for item in payload.get("skills") or []:
+                value = normalize_text(item)
+                if not value or value in seen:
+                    continue
+                if "," in value:
+                    fail(f"Skill names must be comma-separated without embedded commas: {value!r}")
+                seen.add(value)
+                result.append(value)
+            return result
+
+        @contextlib.contextmanager
+        def write_txn_for(kb, conn):
+            if kb is not None and hasattr(kb, "write_txn"):
+                with kb.write_txn(conn):
+                    yield
+                return
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+                yield
+                conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
+
+        def append_event(kb, conn, task_id, kind, event_payload=None):
+            if kb is not None and hasattr(kb, "_append_event"):
+                kb._append_event(conn, task_id, kind, event_payload)
+                return
+            if not table_exists(conn, "task_events"):
+                return
+            conn.execute(
+                "INSERT INTO task_events (task_id, kind, payload, created_at) VALUES (?, ?, ?, ?)",
+                (
+                    task_id,
+                    kind,
+                    json.dumps(event_payload, ensure_ascii=False) if event_payload is not None else None,
+                    int(time.time()),
+                ),
+            )
+
+        def task_exists(conn, task_id):
+            return bool(conn.execute("SELECT 1 FROM tasks WHERE id = ?", (task_id,)).fetchone())
+
+        def update_task_fields(kb, conn, task_id):
+            if not table_exists(conn, "tasks"):
+                fail("The Kanban tasks table is missing.")
+            body = normalize_text(payload.get("body"))
+            tenant = normalize_text(payload.get("tenant"))
+            priority = int(payload.get("priority") or 0)
+            skills = normalized_skill_list()
+            skills_json = json.dumps(skills, ensure_ascii=False) if skills else None
+
+            with write_txn_for(kb, conn):
+                row = conn.execute(
+                    "SELECT body, tenant, priority, skills FROM tasks WHERE id = ?",
+                    (task_id,),
+                ).fetchone()
+                if row is None:
+                    fail(f"No such Kanban task: {task_id}")
+
+                changed = []
+                if row["body"] != body:
+                    changed.append("body")
+                if row["tenant"] != tenant:
+                    changed.append("tenant")
+                if int_value(row["priority"], 0) != priority:
+                    changed.append("priority")
+                if parse_json_list(row["skills"]) != skills:
+                    changed.append("skills")
+
+                if not changed:
+                    return False
+
+                conn.execute(
+                    "UPDATE tasks SET body = ?, tenant = ?, priority = ?, skills = ? WHERE id = ?",
+                    (body, tenant, priority, skills_json, task_id),
+                )
+                append_event(kb, conn, task_id, "updated", {"fields": changed})
+            return True
+
+        def link_task(kb, conn, parent_id, child_id):
+            if kb is not None and hasattr(kb, "link_tasks"):
+                kb.link_tasks(conn, parent_id, child_id)
+                return
+            fail("This Hermes Agent build does not support Kanban dependency links. Run `hermes update` on the host.")
+
+        def unlink_task(kb, conn, parent_id, child_id):
+            if kb is not None and hasattr(kb, "unlink_tasks"):
+                return bool(kb.unlink_tasks(conn, parent_id, child_id))
+            fail("This Hermes Agent build does not support Kanban dependency links. Run `hermes update` on the host.")
+
+        def recompute_ready_any(kb, conn):
+            if kb is not None and hasattr(kb, "recompute_ready"):
+                return int(kb.recompute_ready(conn) or 0)
+            return recompute_ready_rows(conn)
+
+        def set_task_links(kb, conn, task_id, desired_ids, parents):
+            if not task_exists(conn, task_id):
+                fail(f"No such Kanban task: {task_id}")
+            if task_id in desired_ids:
+                fail("A Kanban task cannot depend on itself.")
+
+            current = link_ids(conn, task_id, parents=parents)
+            current_set = set(current)
+            desired_set = set(desired_ids)
+            removals = [item for item in current if item not in desired_set]
+            additions = [item for item in desired_ids if item not in current_set]
+
+            for linked_id in removals:
+                if parents:
+                    unlink_task(kb, conn, linked_id, task_id)
+                else:
+                    unlink_task(kb, conn, task_id, linked_id)
+
+            for linked_id in additions:
+                if parents:
+                    link_task(kb, conn, linked_id, task_id)
+                else:
+                    link_task(kb, conn, task_id, linked_id)
+
+            promoted = recompute_ready_any(kb, conn)
+            return len(removals) + len(additions), promoted
+
         def perform_with_module(action, task_id, author):
             kb = import_kanban_module(required=True)
             board_slug = requested_board_slug()
@@ -524,17 +747,22 @@ final class KanbanBrowserService: @unchecked Sendable {
                     title = normalize_text(payload.get("title"))
                     if not title:
                         fail("Task title is required.")
-                    created_id = kb.create_task(
-                        conn,
-                        title=title,
-                        body=normalize_text(payload.get("body")),
-                        assignee=normalize_text(payload.get("assignee")),
-                        created_by=author,
-                        tenant=normalize_text(payload.get("tenant")),
-                        priority=int(payload.get("priority") or 0),
-                        triage=bool(payload.get("triage")),
-                        skills=payload.get("skills") or None,
-                    )
+                    parent_ids = normalized_payload_list("parent_ids")
+                    if parent_ids and not supports_keyword(kb.create_task, "parents"):
+                        fail("This Hermes Agent build does not support Kanban parent links at task creation. Run `hermes update` on the host.")
+                    kwargs = {
+                        "title": title,
+                        "body": normalize_text(payload.get("body")),
+                        "assignee": normalize_text(payload.get("assignee")),
+                        "created_by": author,
+                        "tenant": normalize_text(payload.get("tenant")),
+                        "priority": int(payload.get("priority") or 0),
+                        "triage": bool(payload.get("triage")),
+                        "skills": payload.get("skills") or None,
+                    }
+                    if supports_keyword(kb.create_task, "parents"):
+                        kwargs["parents"] = parent_ids
+                    created_id = kb.create_task(conn, **kwargs)
                     return ("Kanban task created.", created_id, None)
 
                 if not task_id and action != "dispatch":
@@ -546,6 +774,18 @@ final class KanbanBrowserService: @unchecked Sendable {
                         fail("Comment text is required.")
                     kb.add_comment(conn, task_id, author, text)
                     return ("Comment added.", task_id, None)
+
+                if action == "update_fields":
+                    update_task_fields(kb, conn, task_id)
+                    return ("Task details updated.", task_id, None)
+
+                if action == "set_parents":
+                    changed, promoted = set_task_links(kb, conn, task_id, normalized_payload_list("parent_ids"), parents=True)
+                    return (f"Task parents updated. {changed} link changes, {promoted} promoted.", task_id, None)
+
+                if action == "set_children":
+                    changed, promoted = set_task_links(kb, conn, task_id, normalized_payload_list("child_ids"), parents=False)
+                    return (f"Task children updated. {changed} link changes, {promoted} promoted.", task_id, None)
 
                 if action == "assign":
                     assignee = normalize_text(payload.get("assignee"))
@@ -641,6 +881,8 @@ final class KanbanBrowserService: @unchecked Sendable {
                     skill_text = normalize_text(skill)
                     if skill_text:
                         args.extend(["--skill", skill_text])
+                for parent_id in normalized_payload_list("parent_ids"):
+                    args.extend(["--parent", parent_id])
                 args.append(title)
                 data = run_hermes_cli(args, expect_json=True)
                 return ("Kanban task created.", data.get("id"), None)
@@ -654,6 +896,56 @@ final class KanbanBrowserService: @unchecked Sendable {
                     fail("Comment text is required.")
                 run_hermes_cli(kanban_cli_args(board_slug, ["comment", "--author", author, task_id, text]))
                 return ("Comment added.", task_id, None)
+
+            if action == "update_fields":
+                db_path = kanban_db_path(board_slug)
+                if not db_path.exists():
+                    fail(f"No such Kanban task: {task_id}")
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                try:
+                    update_task_fields(None, conn, task_id)
+                finally:
+                    conn.close()
+                return ("Task details updated.", task_id, None)
+
+            if action in ("set_parents", "set_children"):
+                db_path = kanban_db_path(board_slug)
+                if not db_path.exists():
+                    fail(f"No such Kanban task: {task_id}")
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                try:
+                    if not task_exists(conn, task_id):
+                        fail(f"No such Kanban task: {task_id}")
+                    parents = action == "set_parents"
+                    key = "parent_ids" if parents else "child_ids"
+                    desired_ids = normalized_payload_list(key)
+                    if task_id in desired_ids:
+                        fail("A Kanban task cannot depend on itself.")
+                    current = link_ids(conn, task_id, parents=parents)
+                finally:
+                    conn.close()
+
+                current_set = set(current)
+                desired_set = set(desired_ids)
+                for linked_id in [item for item in current if item not in desired_set]:
+                    if parents:
+                        run_hermes_cli(kanban_cli_args(board_slug, ["unlink", linked_id, task_id]))
+                    else:
+                        run_hermes_cli(kanban_cli_args(board_slug, ["unlink", task_id, linked_id]))
+                for linked_id in [item for item in desired_ids if item not in current_set]:
+                    if parents:
+                        run_hermes_cli(kanban_cli_args(board_slug, ["link", linked_id, task_id]))
+                    else:
+                        run_hermes_cli(kanban_cli_args(board_slug, ["link", task_id, linked_id]))
+                conn = sqlite3.connect(db_path)
+                conn.row_factory = sqlite3.Row
+                try:
+                    recompute_ready_rows(conn)
+                finally:
+                    conn.close()
+                return ("Task dependencies updated.", task_id, None)
 
             if action == "assign":
                 assignee = normalize_text(payload.get("assignee")) or "none"
@@ -727,6 +1019,7 @@ final class KanbanBrowserService: @unchecked Sendable {
 
     private var kanbanPythonHelpers: String {
         """
+        import contextlib
         import inspect
         import json
         import os
@@ -1863,6 +2156,8 @@ private struct KanbanMutationRequest: Encodable {
     let text: String?
     let result: String?
     let maxSpawn: Int?
+    var parentIDs: [String]? = nil
+    var childIDs: [String]? = nil
 
     enum CodingKeys: String, CodingKey {
         case kanbanHome = "kanban_home"
@@ -1880,5 +2175,7 @@ private struct KanbanMutationRequest: Encodable {
         case text
         case result
         case maxSpawn = "max_spawn"
+        case parentIDs = "parent_ids"
+        case childIDs = "child_ids"
     }
 }

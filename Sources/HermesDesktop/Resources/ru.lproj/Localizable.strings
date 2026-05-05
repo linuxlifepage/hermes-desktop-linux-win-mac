@@ -776,3 +776,8 @@
 "Select a skill to inspect its metadata, related assets and full SKILL.md content." = "Выберите навык, чтобы просмотреть его метаданные, связанные ресурсы и полный SKILL.md.";
 "Browse the Hermes skill library discovered on the active host." = "Просматривайте библиотеку навыков Hermes, найденную на активном хосте.";
 "Loading skills…" = "Загрузка навыков…";
+"Parents" = "Родители";
+"%@ links" = "%@ связей";
+"Task description" = "Описание задачи";
+"t_parent_a, t_parent_b" = "t_parent_a, t_parent_b";
+"t_child_a, t_child_b" = "t_child_a, t_child_b";

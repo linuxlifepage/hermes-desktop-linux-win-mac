@@ -310,8 +310,9 @@ surface area and workflow, not about creating a second source of truth.
   the default board at `~/.hermes/kanban.db`, plus additional boards under
   `~/.hermes/kanban/boards/` when supported. It includes board selection,
   board creation and archive, task creation, search, filters, assignment,
-  comments, block, unblock, complete, archive, delete, run and event history,
-  worker log tailing, and dispatcher nudging when the host supports it.
+  dependency links, editable task metadata, comments, block, unblock, complete,
+  archive, delete, run and event history, worker log tailing, and dispatcher
+  nudging when the host supports it.
 - `Usage`
   Shows aggregate input and output token totals, top sessions, top models,
   recent session trends, and when available, a host-wide profile breakdown.
@@ -466,8 +467,8 @@ source of truth.
   tool-output summaries, in-app chat continuation, and terminal resume
 - [x] a native Kanban workspace for upstream Hermes boards, including board
   selection, board creation and archive, task creation, status actions,
-  assignment, comments, run/event history, worker log visibility, and
-  dispatcher nudging
+  assignment, dependency links, editable task metadata, comments, run/event
+  history, worker log visibility, and dispatcher nudging
 - [x] a usage dashboard with aggregate token totals, top sessions, top models,
   trends, and host-wide multi-profile totals when available
 - [x] native skill workflows for discovering, inspecting, creating, and editing

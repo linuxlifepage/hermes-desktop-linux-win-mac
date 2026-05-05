@@ -1698,6 +1698,60 @@ final class AppState: ObservableObject {
         }
     }
 
+    func updateKanbanTaskFields(
+        taskID: String,
+        body: String,
+        tenant: String,
+        priority: Int,
+        skills: [String]
+    ) async {
+        await operateOnKanbanTask(
+            taskID: taskID,
+            successMessage: "Kanban task details updated",
+            failureMessage: "Unable to update Kanban task details"
+        ) { profile, boardSlug in
+            try await kanbanBrowserService.updateTaskFields(
+                connection: profile,
+                boardSlug: boardSlug,
+                taskID: taskID,
+                body: body,
+                tenant: tenant,
+                priority: priority,
+                skills: skills
+            )
+        }
+    }
+
+    func setKanbanTaskParents(taskID: String, parentIDs: [String]) async {
+        await operateOnKanbanTask(
+            taskID: taskID,
+            successMessage: "Kanban task parents updated",
+            failureMessage: "Unable to update Kanban task parents"
+        ) { profile, boardSlug in
+            try await kanbanBrowserService.setTaskParents(
+                connection: profile,
+                boardSlug: boardSlug,
+                taskID: taskID,
+                parentIDs: parentIDs
+            )
+        }
+    }
+
+    func setKanbanTaskChildren(taskID: String, childIDs: [String]) async {
+        await operateOnKanbanTask(
+            taskID: taskID,
+            successMessage: "Kanban task children updated",
+            failureMessage: "Unable to update Kanban task children"
+        ) { profile, boardSlug in
+            try await kanbanBrowserService.setTaskChildren(
+                connection: profile,
+                boardSlug: boardSlug,
+                taskID: taskID,
+                childIDs: childIDs
+            )
+        }
+    }
+
     func assignKanbanTask(taskID: String, assignee: String?) async {
         await operateOnKanbanTask(
             taskID: taskID,

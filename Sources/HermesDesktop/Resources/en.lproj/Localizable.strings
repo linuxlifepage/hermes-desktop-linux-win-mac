@@ -776,3 +776,8 @@
 "Select a skill to inspect its metadata, related assets and full SKILL.md content." = "Select a skill to inspect its metadata, related assets and full SKILL.md content.";
 "Browse the Hermes skill library discovered on the active host." = "Browse the Hermes skill library discovered on the active host.";
 "Loading skills…" = "Loading skills…";
+"Parents" = "Parents";
+"%@ links" = "%@ links";
+"Task description" = "Task description";
+"t_parent_a, t_parent_b" = "t_parent_a, t_parent_b";
+"t_child_a, t_child_b" = "t_child_a, t_child_b";

@@ -924,6 +924,7 @@ struct KanbanTaskDraft: Equatable {
     var priority = 0
     var tenant = ""
     var skillsText = ""
+    var parentIDsText = ""
     var startsInTriage = false
 
     var normalizedTitle: String {
@@ -946,20 +947,51 @@ struct KanbanTaskDraft: Equatable {
     }
 
     var skills: [String] {
-        skillsText
-            .split(separator: ",")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
+        Self.normalizedCommaList(skillsText)
+    }
+
+    var parentIDs: [String] {
+        Self.normalizedIDList(parentIDsText)
     }
 
     var validationError: String? {
         if normalizedTitle.isEmpty {
             return "Task title is required."
         }
-        if skills.contains(where: { $0.contains(",") }) {
-            return "Skill names must be comma-separated without embedded commas."
-        }
         return nil
+    }
+
+    static func normalizedCommaList(_ value: String) -> [String] {
+        uniquePreservingOrder(
+            value
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+    }
+
+    static func normalizedIDList(_ value: String) -> [String] {
+        let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ","))
+        return uniquePreservingOrder(
+            value
+                .components(separatedBy: separators)
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+    }
+
+    static func listText(_ values: [String]) -> String {
+        values.joined(separator: ", ")
+    }
+
+    private static func uniquePreservingOrder(_ values: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for value in values where !seen.contains(value) {
+            seen.insert(value)
+            result.append(value)
+        }
+        return result
     }
 }
 
@@ -1011,6 +1043,12 @@ struct KanbanActionDraft: Equatable {
     var result = ""
     var blockReason = ""
     var assignee = ""
+    var body = ""
+    var tenant = ""
+    var priority = 0
+    var skillsText = ""
+    var parentIDsText = ""
+    var childIDsText = ""
 
     var normalizedComment: String? {
         let value = comment.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1030,5 +1068,25 @@ struct KanbanActionDraft: Equatable {
     var normalizedAssignee: String? {
         let value = assignee.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
+    }
+
+    var normalizedBodyForUpdate: String {
+        body.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var normalizedTenantForUpdate: String {
+        tenant.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var skills: [String] {
+        KanbanTaskDraft.normalizedCommaList(skillsText)
+    }
+
+    var parentIDs: [String] {
+        KanbanTaskDraft.normalizedIDList(parentIDsText)
+    }
+
+    var childIDs: [String] {
+        KanbanTaskDraft.normalizedIDList(childIDsText)
     }
 }
