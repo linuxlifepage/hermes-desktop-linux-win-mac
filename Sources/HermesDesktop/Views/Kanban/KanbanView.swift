@@ -578,7 +578,11 @@ struct KanbanView: View {
 
     private func boardSubtitle(_ board: KanbanBoard) -> String {
         let boardName = appState.selectedKanbanBoard?.resolvedName ?? selectedBoardTitle
-        return "\(boardName) - \(board.databasePath) - SSH-native, active profile as operator"
+        return L10n.string(
+            "Kanban board %@ at %@. SSH-native; active profile is the operator.",
+            boardName,
+            board.databasePath
+        )
     }
 
     private func dispatcherWarning(for board: KanbanBoard) -> String? {

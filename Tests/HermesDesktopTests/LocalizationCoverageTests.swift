@@ -36,6 +36,15 @@ struct LocalizationCoverageTests {
     }
 
     @Test
+    func wrapperLocalizedKeysExistInEnglishTable() throws {
+        let english = try #require(Self.localizationTables()["en"])
+        let keys = try Self.wrapperL10nKeys()
+        let missing = keys.subtracting(english.entries.keys).sorted()
+
+        #expect(missing.isEmpty, "Missing English wrapper localization keys: \(missing.joined(separator: ", "))")
+    }
+
+    @Test
     func dynamicDisplayKeysExistInEveryLocalizationTable() throws {
         let tables = try Self.localizationTables()
         let dynamicKeys = Self.dynamicDisplayKeys()
@@ -114,6 +123,32 @@ struct LocalizationCoverageTests {
             for match in regex.matches(in: text, range: range) {
                 guard let keyRange = Range(match.range(at: 1), in: text) else { continue }
                 keys.insert(String(text[keyRange]))
+            }
+        }
+
+        return keys
+    }
+
+    private static func wrapperL10nKeys() throws -> Set<String> {
+        let patterns = [
+            #"(?:HermesInspectorField|HermesLabeledValue|HermesLoadingState)\s*\((?s:.{0,500}?)\blabel:\s*"((?:\\.|[^"\\])*)""#,
+            #"(?:KanbanFormField|CronFormField|SkillFormField|EditorField|ExampleValueRow)\s*\(\s*label:\s*"((?:\\.|[^"\\])*)""#,
+            #"(?:HermesSurfacePanel|HermesPageHeader)\s*\((?s:.{0,500}?)\b(?:title|subtitle):\s*"((?:\\.|[^"\\])*)""#
+        ]
+        let sourcesURL = projectRoot.appendingPathComponent("Sources/HermesDesktop")
+        let sourceFiles = try swiftFiles(under: sourcesURL)
+        var keys = Set<String>()
+
+        for pattern in patterns {
+            let regex = try NSRegularExpression(pattern: pattern)
+
+            for url in sourceFiles {
+                let text = try String(contentsOf: url, encoding: .utf8)
+                let range = NSRange(text.startIndex..<text.endIndex, in: text)
+                for match in regex.matches(in: text, range: range) {
+                    guard let keyRange = Range(match.range(at: 1), in: text) else { continue }
+                    keys.insert(String(text[keyRange]))
+                }
             }
         }
 

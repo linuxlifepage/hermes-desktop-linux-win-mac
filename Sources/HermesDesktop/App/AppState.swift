@@ -98,6 +98,7 @@ final class AppState: ObservableObject {
     private var sessionMessageSignature = SessionMessageSignature(messages: [])
     private var connectionTestRequestID: UUID?
     private var hasPerformedAutomaticUpdateCheck = false
+    private let automaticUpdateCheckInterval: TimeInterval = 24 * 60 * 60
     private var statusTask: Task<Void, Never>?
     private var sessionTranscriptPollingTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
@@ -325,8 +326,11 @@ final class AppState: ObservableObject {
     }
 
     func checkForUpdatesAtLaunch() async {
+        guard connectionStore.automaticallyChecksForUpdates else { return }
         guard !hasPerformedAutomaticUpdateCheck else { return }
+        guard shouldRunAutomaticUpdateCheck() else { return }
         hasPerformedAutomaticUpdateCheck = true
+        connectionStore.lastAutomaticUpdateCheckAt = Date()
         await checkForUpdates(presentsCurrentResult: false)
     }
 
@@ -341,6 +345,10 @@ final class AppState: ObservableObject {
     func noteOpenedRelease(for update: AvailableUpdate) {
         dismissAvailableUpdate()
         setStatusMessage(L10n.string("Opening Hermes Desktop %@ release…", update.latestVersion))
+    }
+
+    func updateAutomaticUpdateChecks(_ enabled: Bool) {
+        connectionStore.automaticallyChecksForUpdates = enabled
     }
 
     func discardChangesAndContinue() {
@@ -1938,7 +1946,7 @@ final class AppState: ObservableObject {
 
         isCheckingForUpdates = true
         if presentsCurrentResult {
-            setStatusMessage(L10n.string("Checking for updates…"))
+            setStatusMessage(L10n.string("Checking for Hermes Desktop updates…"))
         }
 
         do {
@@ -1947,12 +1955,12 @@ final class AppState: ObservableObject {
 
             if let update {
                 availableUpdate = update
-                setStatusMessage(L10n.string("Update available: %@", update.latestVersion))
+                setStatusMessage(L10n.string("Hermes Desktop update available: %@", update.latestVersion))
             } else if presentsCurrentResult {
                 activeAlert = AppAlert(
                     title: L10n.string("Hermes Desktop is up to date"),
                     message: L10n.string(
-                        "You are running Hermes Desktop %@, which matches the latest GitHub release.",
+                        "You are running Hermes Desktop %@, which matches the latest Hermes Desktop release.",
                         UpdateCheckService.bundleShortVersion()
                     )
                 )
@@ -1968,6 +1976,14 @@ final class AppState: ObservableObject {
                 setStatusMessage(nil)
             }
         }
+    }
+
+    private func shouldRunAutomaticUpdateCheck(now: Date = Date()) -> Bool {
+        guard let lastAutomaticUpdateCheckAt = connectionStore.lastAutomaticUpdateCheckAt else {
+            return true
+        }
+
+        return now.timeIntervalSince(lastAutomaticUpdateCheckAt) >= automaticUpdateCheckInterval
     }
 
     private func ensureInitialFileLoads() async {

@@ -50,14 +50,17 @@ where the canonical state lives, and which path the app is actually using.
     </td>
   </tr>
   <tr>
-    <td colspan="2">
+    <td width="50%">
+      <img src="assets/skills.png" alt="Hermes Desktop Skills view" />
+    </td>
+    <td width="50%">
       <img src="assets/terminal.png" alt="Hermes Desktop Terminal view" />
     </td>
   </tr>
 </table>
 
-Five views from a live Hermes host: sessions, Kanban, workspace files, usage,
-and terminal workflows.
+Six views from a live Hermes host: sessions, Kanban, workspace files, usage,
+skills, and terminal workflows.
 
 ## What You Get
 
@@ -69,7 +72,9 @@ and terminal workflows.
 - a session workbench for searching session metadata and message content,
   reading transcripts, pinning important sessions, continuing a chat, and
   resuming the same session in Terminal
-- a native Kanban board for the upstream host-wide `~/.hermes/kanban.db`
+- a native Kanban workspace for the upstream host-wide Kanban home: the default
+  `~/.hermes/kanban.db` board plus additional upstream boards when the host
+  supports them
 - direct editing for canonical Hermes files, selected remote text files, and
   remote `SKILL.md` files, with conflict checks before save
 - an embedded SSH terminal with tabs, themes, and enough room for real
@@ -115,8 +120,9 @@ Setup is intentionally lightweight. You need only a few things:
 - `python3` available on the Hermes host
 - `hermes` available on the host's non-interactive SSH `PATH` for in-app chat
   turns and terminal resume workflows
-- a Hermes Agent build with upstream Kanban support if you want the
-  native Kanban board
+- a Hermes Agent build with upstream Kanban support if you want the native
+  Kanban workspace; multiple-board management appears when the host exposes the
+  newer upstream board APIs
 - Hermes data under the remote user's `~/.hermes`
 
 Simple rule: if this works in Terminal from this Mac without asking for a
@@ -300,10 +306,12 @@ surface area and workflow, not about creating a second source of truth.
   you are actually running them: schedule, model, skills, delivery target, and
   recent status.
 - `Kanban`
-  Opens the upstream Hermes Kanban board from the host-wide
-  `~/.hermes/kanban.db`, with task creation, search, assignment, comments,
-  block, unblock, complete, archive, delete, run and event history, worker log
-  tailing, and dispatcher nudging when the host supports it.
+  Opens the upstream Hermes Kanban workspace from the host-wide Kanban home:
+  the default board at `~/.hermes/kanban.db`, plus additional boards under
+  `~/.hermes/kanban/boards/` when supported. It includes board selection,
+  board creation and archive, task creation, search, filters, assignment,
+  comments, block, unblock, complete, archive, delete, run and event history,
+  worker log tailing, and dispatcher nudging when the host supports it.
 - `Usage`
   Shows aggregate input and output token totals, top sessions, top models,
   recent session trends, and when available, a host-wide profile breakdown.
@@ -314,9 +322,9 @@ surface area and workflow, not about creating a second source of truth.
   companion folder awareness, optional folder scaffolding, and remote
   conflict checks before save.
 - `Terminal`
-  Opens the real SSH shell inside the app, with multiple tabs, quick theme
-  presets, live color tuning, and room for a genuinely multi-profile,
-  multi-agent workflow that still stays close to the host.
+  Opens the real SSH shell inside the app, with multiple tabs, named theme
+  presets, live background and text color tuning, and room for a genuinely
+  multi-profile, multi-agent workflow that still stays close to the host.
 
 ## Why It Feels Different
 
@@ -330,7 +338,8 @@ Hermes Desktop makes a narrower bet.
 
 It is a native macOS app that talks to your Hermes host over SSH and keeps the
 host authoritative. Sessions come from the remote session store. Kanban comes
-from the upstream `kanban.db`. Cron jobs come from the remote scheduler state.
+from the upstream host-wide Kanban home, starting with the default
+`~/.hermes/kanban.db` board. Cron jobs come from the remote scheduler state.
 Files and skills are edited on the host with conflict checks.
 
 The app feels calmer because it does not blur where the work is happening. It
@@ -367,6 +376,9 @@ Here are concrete things you can verify yourself:
 - GitHub Releases include a SHA-256 checksum for the release zip
 - Hermes Desktop uses direct SSH to the host you choose and does not require a
   gateway API or helper service
+- the built-in update check calls GitHub Releases for the latest Hermes Desktop
+  app version only; it does not update Hermes Agent and does not send your host,
+  profile, file, session, or Kanban content
 - you can inspect its live network behavior with Little Snitch, LuLu, or
   `nettop`
 
@@ -401,8 +413,10 @@ On the Hermes host.
 
 Sessions are read from `~/.hermes/state.db` first, with
 `~/.hermes/sessions/*.jsonl` as a fallback only when the SQLite store is not
-available. Kanban reads and writes the upstream `~/.hermes/kanban.db`. Cron jobs
-use the remote scheduler state. Files and skills are saved back to the host.
+available. Kanban reads and writes the upstream host-wide Kanban home: the
+default board is `~/.hermes/kanban.db`, and additional boards use
+`~/.hermes/kanban/boards/<slug>/kanban.db` when available. Cron jobs use the
+remote scheduler state. Files and skills are saved back to the host.
 
 ### What does in-app chat do?
 
@@ -450,9 +464,10 @@ source of truth.
   behavior
 - [x] a session workbench with pinned sessions, readable transcripts, compact
   tool-output summaries, in-app chat continuation, and terminal resume
-- [x] a native Kanban workspace for the upstream Hermes board, including task
-  creation, status actions, assignment, comments, run/event history, worker log
-  visibility, and dispatcher nudging
+- [x] a native Kanban workspace for upstream Hermes boards, including board
+  selection, board creation and archive, task creation, status actions,
+  assignment, comments, run/event history, worker log visibility, and
+  dispatcher nudging
 - [x] a usage dashboard with aggregate token totals, top sessions, top models,
   trends, and host-wide multi-profile totals when available
 - [x] native skill workflows for discovering, inspecting, creating, and editing
@@ -461,8 +476,8 @@ source of truth.
 - [x] profile-aware host workflows aligned with Hermes Agent profiles on the
   same SSH target
 - [x] native cron job workflows for the canonical remote scheduler state
-- [x] a real embedded SSH terminal with tabs, appearance controls, and coherent
-  multi-profile workspace behavior
+- [x] a real embedded SSH terminal with tabs, named theme presets, live color
+  controls, and coherent multi-profile workspace behavior
 - [x] English, Simplified Chinese, and Russian localization resources packaged
   in the app bundle
 - [x] universal macOS release packaging for Apple Silicon and Intel, with
@@ -505,7 +520,7 @@ To create the GitHub Releases archive:
 For release-candidate packaging, you can stamp an explicit version:
 
 ```bash
-HERMES_VERSION=0.6.0 ./scripts/package-github-release.sh
+HERMES_VERSION=0.7.0 ./scripts/package-github-release.sh
 ```
 
 Release artifacts:

@@ -48,7 +48,15 @@ struct HermesDesktopCommands: Commands {
 
             Divider()
 
-            Button(L10n.string("Check for Updates…")) {
+            Toggle(
+                L10n.string("Check Automatically for Hermes Desktop Updates"),
+                isOn: Binding(
+                    get: { appState.connectionStore.automaticallyChecksForUpdates },
+                    set: { appState.updateAutomaticUpdateChecks($0) }
+                )
+            )
+
+            Button(L10n.string("Check for Hermes Desktop Updates…")) {
                 Task {
                     await appState.checkForUpdatesFromCommand()
                 }

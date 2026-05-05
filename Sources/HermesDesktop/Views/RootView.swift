@@ -90,6 +90,10 @@ struct RootView: View {
         .sheet(item: $appState.availableUpdate) { update in
             UpdateAvailableSheet(
                 update: update,
+                automaticallyChecksForUpdates: Binding(
+                    get: { appState.connectionStore.automaticallyChecksForUpdates },
+                    set: { appState.updateAutomaticUpdateChecks($0) }
+                ),
                 openRelease: {
                     appState.noteOpenedRelease(for: update)
                     openURL(update.htmlURL)
@@ -167,6 +171,7 @@ struct RootView: View {
 
 private struct UpdateAvailableSheet: View {
     let update: AvailableUpdate
+    @Binding var automaticallyChecksForUpdates: Bool
     let openRelease: () -> Void
     let dismiss: () -> Void
 
@@ -185,7 +190,7 @@ private struct UpdateAvailableSheet: View {
 
                     Text(
                         L10n.string(
-                            "You are running %@. The latest GitHub release is %@.",
+                            "You are running Hermes Desktop %@. The latest Hermes Desktop release is %@.",
                             update.currentVersion,
                             update.latestVersion
                         )
@@ -216,6 +221,14 @@ private struct UpdateAvailableSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+
+            Text(L10n.string("This checks only the Hermes Desktop app. It does not update Hermes Agent on your host."))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Toggle(L10n.string("Check Automatically for Hermes Desktop Updates"), isOn: $automaticallyChecksForUpdates)
+                .toggleStyle(.checkbox)
 
             HStack {
                 Spacer()

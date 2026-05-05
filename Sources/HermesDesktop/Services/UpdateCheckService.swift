@@ -142,7 +142,10 @@ enum UpdateCheckError: LocalizedError, Equatable {
     var errorDescription: String? {
         switch self {
         case .unexpectedStatusCode(let statusCode):
-            return "GitHub returned HTTP \(statusCode) while checking the latest Hermes Desktop release."
+            return L10n.string(
+                "GitHub returned HTTP %@ while checking the latest Hermes Desktop release.",
+                "\(statusCode)"
+            )
         }
     }
 }

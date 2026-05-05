@@ -15,6 +15,16 @@ final class ConnectionStore: ObservableObject {
             savePreferences()
         }
     }
+    @Published var automaticallyChecksForUpdates = true {
+        didSet {
+            savePreferences()
+        }
+    }
+    @Published var lastAutomaticUpdateCheckAt: Date? {
+        didSet {
+            savePreferences()
+        }
+    }
     @Published private(set) var workspaceFileBookmarks: [WorkspaceFileBookmark] = [] {
         didSet {
             savePreferences()
@@ -170,6 +180,8 @@ final class ConnectionStore: ObservableObject {
         let preferences = AppPreferences(
             lastConnectionID: lastConnectionID,
             terminalTheme: terminalTheme,
+            automaticallyChecksForUpdates: automaticallyChecksForUpdates,
+            lastAutomaticUpdateCheckAt: lastAutomaticUpdateCheckAt,
             workspaceFileBookmarks: workspaceFileBookmarks,
             pinnedSessions: pinnedSessions
         )
@@ -206,17 +218,23 @@ final class ConnectionStore: ObservableObject {
             let decoded = try decoder.decode(AppPreferences.self, from: data)
             lastConnectionID = decoded.lastConnectionID
             terminalTheme = decoded.terminalTheme ?? .defaultValue
+            automaticallyChecksForUpdates = decoded.automaticallyChecksForUpdates ?? true
+            lastAutomaticUpdateCheckAt = decoded.lastAutomaticUpdateCheckAt
             workspaceFileBookmarks = decoded.workspaceFileBookmarks ?? []
             pinnedSessions = decoded.pinnedSessions ?? []
             try? fileManagerSetPrivatePermissions(at: paths.preferencesURL)
         } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
             lastConnectionID = nil
             terminalTheme = .defaultValue
+            automaticallyChecksForUpdates = true
+            lastAutomaticUpdateCheckAt = nil
             workspaceFileBookmarks = []
             pinnedSessions = []
         } catch {
             lastConnectionID = nil
             terminalTheme = .defaultValue
+            automaticallyChecksForUpdates = true
+            lastAutomaticUpdateCheckAt = nil
             workspaceFileBookmarks = []
             pinnedSessions = []
             reportPersistenceError(
@@ -237,6 +255,8 @@ final class ConnectionStore: ObservableObject {
 private struct AppPreferences: Codable {
     var lastConnectionID: UUID?
     var terminalTheme: TerminalThemePreference?
+    var automaticallyChecksForUpdates: Bool?
+    var lastAutomaticUpdateCheckAt: Date?
     var workspaceFileBookmarks: [WorkspaceFileBookmark]?
     var pinnedSessions: [PinnedSession]?
 }
