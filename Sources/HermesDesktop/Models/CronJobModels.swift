@@ -26,6 +26,9 @@ struct CronJob: Codable, Identifiable, Hashable, OptionalModelDisplayable {
     let deliveryTarget: String?
     let origin: CronJobOrigin?
     let lastDeliveryError: String?
+    let script: String?
+    let workdir: String?
+    let noAgent: Bool
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -48,6 +51,86 @@ struct CronJob: Codable, Identifiable, Hashable, OptionalModelDisplayable {
         case deliveryTarget = "delivery_target"
         case origin
         case lastDeliveryError = "last_delivery_error"
+        case script
+        case workdir
+        case noAgent = "no_agent"
+    }
+
+    init(
+        id: String,
+        name: String,
+        prompt: String,
+        skills: [String],
+        model: String?,
+        provider: String?,
+        baseURL: String?,
+        schedule: CronSchedule?,
+        scheduleDisplay: String,
+        recurrence: CronRecurrence?,
+        enabled: Bool,
+        state: CronJobState,
+        createdAt: Date?,
+        nextRunAt: Date?,
+        lastRunAt: Date?,
+        lastStatus: String?,
+        lastError: String?,
+        deliveryTarget: String?,
+        origin: CronJobOrigin?,
+        lastDeliveryError: String?,
+        script: String? = nil,
+        workdir: String? = nil,
+        noAgent: Bool = false
+    ) {
+        self.id = id
+        self.name = name
+        self.prompt = prompt
+        self.skills = skills
+        self.model = model
+        self.provider = provider
+        self.baseURL = baseURL
+        self.schedule = schedule
+        self.scheduleDisplay = scheduleDisplay
+        self.recurrence = recurrence
+        self.enabled = enabled
+        self.state = state
+        self.createdAt = createdAt
+        self.nextRunAt = nextRunAt
+        self.lastRunAt = lastRunAt
+        self.lastStatus = lastStatus
+        self.lastError = lastError
+        self.deliveryTarget = deliveryTarget
+        self.origin = origin
+        self.lastDeliveryError = lastDeliveryError
+        self.script = script
+        self.workdir = workdir
+        self.noAgent = noAgent
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        prompt = try container.decodeIfPresent(String.self, forKey: .prompt) ?? ""
+        skills = try container.decodeIfPresent([String].self, forKey: .skills) ?? []
+        model = try container.decodeIfPresent(String.self, forKey: .model)
+        provider = try container.decodeIfPresent(String.self, forKey: .provider)
+        baseURL = try container.decodeIfPresent(String.self, forKey: .baseURL)
+        schedule = try container.decodeIfPresent(CronSchedule.self, forKey: .schedule)
+        scheduleDisplay = try container.decodeIfPresent(String.self, forKey: .scheduleDisplay) ?? ""
+        recurrence = try container.decodeIfPresent(CronRecurrence.self, forKey: .recurrence)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        state = try container.decodeIfPresent(CronJobState.self, forKey: .state) ?? .scheduled
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+        nextRunAt = try container.decodeIfPresent(Date.self, forKey: .nextRunAt)
+        lastRunAt = try container.decodeIfPresent(Date.self, forKey: .lastRunAt)
+        lastStatus = try container.decodeIfPresent(String.self, forKey: .lastStatus)
+        lastError = try container.decodeIfPresent(String.self, forKey: .lastError)
+        deliveryTarget = try container.decodeIfPresent(String.self, forKey: .deliveryTarget)
+        origin = try container.decodeIfPresent(CronJobOrigin.self, forKey: .origin)
+        lastDeliveryError = try container.decodeIfPresent(String.self, forKey: .lastDeliveryError)
+        script = try container.decodeIfPresent(String.self, forKey: .script)
+        workdir = try container.decodeIfPresent(String.self, forKey: .workdir)
+        noAgent = try container.decodeIfPresent(Bool.self, forKey: .noAgent) ?? false
     }
 
     var resolvedName: String {
@@ -61,6 +144,11 @@ struct CronJob: Codable, Identifiable, Hashable, OptionalModelDisplayable {
     }
 
     var previewPrompt: String {
+        if noAgent {
+            let scriptLabel = trimmedScript ?? L10n.string("No script configured")
+            return L10n.string("Script-only watchdog: %@", scriptLabel)
+        }
+
         guard let trimmedPrompt else {
             return L10n.string("No prompt payload saved for this job.")
         }
@@ -89,6 +177,20 @@ struct CronJob: Codable, Identifiable, Hashable, OptionalModelDisplayable {
         state.isActive
     }
 
+    var trimmedScript: String? {
+        let trimmed = script?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var trimmedWorkdir: String? {
+        let trimmed = workdir?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var executionModeTitle: String {
+        noAgent ? "Script Only" : "Agent"
+    }
+
     var displayState: String {
         state.displayTitle(isEnabled: enabled)
     }
@@ -97,8 +199,9 @@ struct CronJob: Codable, Identifiable, Hashable, OptionalModelDisplayable {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else { return true }
 
-        let normalizedQuery = trimmedQuery.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
-        let haystacks = [
+        let foldingOptions: String.CompareOptions = [.diacriticInsensitive, .caseInsensitive]
+        let normalizedQuery = trimmedQuery.folding(options: foldingOptions, locale: Locale.current)
+        var haystacks: [String] = [
             id,
             resolvedName,
             prompt,
@@ -108,10 +211,16 @@ struct CronJob: Codable, Identifiable, Hashable, OptionalModelDisplayable {
             provider ?? "",
             baseURL ?? "",
             deliveryTarget ?? ""
-        ] + skills
+        ]
+        haystacks.append(contentsOf: skills)
+        haystacks.append(contentsOf: [
+            script ?? "",
+            workdir ?? "",
+            executionModeTitle
+        ])
 
         return haystacks.contains { value in
-            value.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            value.folding(options: foldingOptions, locale: Locale.current)
                 .localizedStandardContains(normalizedQuery)
         }
     }
@@ -551,6 +660,9 @@ struct CronScheduleDraft: Hashable {
 struct CronJobDraft: Hashable {
     var name: String
     var prompt: String
+    var script: String
+    var workdir: String
+    var noAgent: Bool
     var skillsText: String
     var model: String
     var provider: String
@@ -563,6 +675,9 @@ struct CronJobDraft: Hashable {
     init(
         name: String = "",
         prompt: String = "",
+        script: String = "",
+        workdir: String = "",
+        noAgent: Bool = false,
         skillsText: String = "",
         model: String = "",
         provider: String = "",
@@ -574,6 +689,9 @@ struct CronJobDraft: Hashable {
     ) {
         self.name = name
         self.prompt = prompt
+        self.script = script
+        self.workdir = workdir
+        self.noAgent = noAgent
         self.skillsText = skillsText
         self.model = model
         self.provider = provider
@@ -588,6 +706,9 @@ struct CronJobDraft: Hashable {
         let parsedDelivery = CronDeliveryPreset.from(deliveryTarget: job.deliveryTarget)
         self.name = job.resolvedName
         self.prompt = job.trimmedPrompt ?? job.prompt
+        self.script = job.trimmedScript ?? ""
+        self.workdir = job.trimmedWorkdir ?? ""
+        self.noAgent = job.noAgent
         self.skillsText = job.skills.joined(separator: ", ")
         self.model = job.model ?? ""
         self.provider = job.provider ?? ""
@@ -604,6 +725,14 @@ struct CronJobDraft: Hashable {
 
     var normalizedPrompt: String {
         prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var normalizedScript: String? {
+        normalizedOptional(script)
+    }
+
+    var normalizedWorkdir: String? {
+        normalizedOptional(workdir)
     }
 
     var normalizedSkills: [String] {
@@ -648,7 +777,11 @@ struct CronJobDraft: Hashable {
             return "A cron job title is required."
         }
 
-        if normalizedPrompt.isEmpty {
+        if noAgent {
+            if normalizedScript == nil {
+                return "A script path is required for script-only jobs."
+            }
+        } else if normalizedPrompt.isEmpty {
             return "A prompt is required."
         }
 

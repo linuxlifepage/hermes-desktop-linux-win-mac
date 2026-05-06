@@ -260,6 +260,7 @@ struct KanbanTask: Codable, Identifiable, Hashable, Sendable, TitleIdentifiable 
     let eventCount: Int
     let runCount: Int
     let latestEventAt: Int?
+    let warnings: KanbanTaskWarnings?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -290,6 +291,7 @@ struct KanbanTask: Codable, Identifiable, Hashable, Sendable, TitleIdentifiable 
         case eventCount = "event_count"
         case runCount = "run_count"
         case latestEventAt = "latest_event_at"
+        case warnings
     }
 
     init(
@@ -320,7 +322,8 @@ struct KanbanTask: Codable, Identifiable, Hashable, Sendable, TitleIdentifiable 
         commentCount: Int,
         eventCount: Int,
         runCount: Int,
-        latestEventAt: Int?
+        latestEventAt: Int?,
+        warnings: KanbanTaskWarnings? = nil
     ) {
         self.id = id
         self.title = title
@@ -350,6 +353,7 @@ struct KanbanTask: Codable, Identifiable, Hashable, Sendable, TitleIdentifiable 
         self.eventCount = eventCount
         self.runCount = runCount
         self.latestEventAt = latestEventAt
+        self.warnings = warnings
     }
 
     init(from decoder: Decoder) throws {
@@ -382,6 +386,7 @@ struct KanbanTask: Codable, Identifiable, Hashable, Sendable, TitleIdentifiable 
         eventCount = try container.decodeIfPresent(Int.self, forKey: .eventCount) ?? 0
         runCount = try container.decodeIfPresent(Int.self, forKey: .runCount) ?? 0
         latestEventAt = try container.decodeIfPresent(Int.self, forKey: .latestEventAt)
+        warnings = try container.decodeIfPresent(KanbanTaskWarnings.self, forKey: .warnings)
     }
 
     var resolvedTitle: String {
@@ -408,6 +413,10 @@ struct KanbanTask: Codable, Identifiable, Hashable, Sendable, TitleIdentifiable 
 
     var isRunning: Bool {
         status == .running
+    }
+
+    var hasActiveWarnings: Bool {
+        warnings?.hasWarnings == true
     }
 
     var isBlocked: Bool {
@@ -467,7 +476,8 @@ struct KanbanTask: Codable, Identifiable, Hashable, Sendable, TitleIdentifiable 
             tenant ?? "",
             result ?? "",
             workspacePath ?? "",
-            createdBy ?? ""
+            createdBy ?? "",
+            warnings?.searchText ?? ""
         ]
         haystacks.append(contentsOf: skills)
         haystacks.append(contentsOf: parentIDs)
@@ -639,6 +649,74 @@ enum KanbanWorkspaceKind: Hashable, Codable, Sendable {
 struct KanbanTaskProgress: Codable, Hashable, Sendable {
     let done: Int
     let total: Int
+}
+
+struct KanbanTaskWarnings: Codable, Hashable, Sendable {
+    let count: Int
+    let kinds: [String: Int]
+    let latestAt: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case count
+        case kinds
+        case latestAt = "latest_at"
+    }
+
+    init(count: Int, kinds: [String: Int], latestAt: Int?) {
+        self.count = count
+        self.kinds = kinds
+        self.latestAt = latestAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        count = try container.decodeIfPresent(Int.self, forKey: .count) ?? 0
+        kinds = try container.decodeIfPresent([String: Int].self, forKey: .kinds) ?? [:]
+        latestAt = try container.decodeIfPresent(Int.self, forKey: .latestAt)
+    }
+
+    var hasWarnings: Bool {
+        count > 0 || !kinds.isEmpty
+    }
+
+    var latestDate: Date? {
+        latestAt.map { Date(timeIntervalSince1970: TimeInterval($0)) }
+    }
+
+    var includesBlockedCompletion: Bool {
+        (kinds["completion_blocked_hallucination"] ?? 0) > 0
+    }
+
+    var includesSuspectedReferences: Bool {
+        (kinds["suspected_hallucinated_references"] ?? 0) > 0
+    }
+
+    var displayTitle: String {
+        if includesBlockedCompletion && includesSuspectedReferences {
+            return "Completion and reference warnings"
+        }
+        if includesBlockedCompletion {
+            return "Completion blocked by phantom card claims"
+        }
+        if includesSuspectedReferences {
+            return "Possible phantom task references"
+        }
+        return "Kanban recovery warning"
+    }
+
+    var displayMessage: String {
+        if includesBlockedCompletion {
+            return "Hermes Agent rejected a completion because the worker claimed cards that do not exist or were not created by that worker."
+        }
+        if includesSuspectedReferences {
+            return "Hermes Agent found task IDs in the completion text that do not resolve on the board."
+        }
+        return "Hermes Agent recorded warning events that may need recovery."
+    }
+
+    var searchText: String {
+        ([displayTitle, displayMessage] + kinds.keys).joined(separator: " ")
+    }
 }
 
 struct KanbanTaskDetail: Codable, Hashable, Sendable {
@@ -1042,6 +1120,10 @@ struct KanbanActionDraft: Equatable {
     var comment = ""
     var result = ""
     var blockReason = ""
+    var recoveryReason = ""
+    var recoverySummary = ""
+    var recoveryMetadata = ""
+    var reclaimBeforeReassign = false
     var assignee = ""
     var body = ""
     var tenant = ""
@@ -1062,6 +1144,21 @@ struct KanbanActionDraft: Equatable {
 
     var normalizedBlockReason: String? {
         let value = blockReason.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    var normalizedRecoveryReason: String? {
+        let value = recoveryReason.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    var normalizedRecoverySummary: String? {
+        let value = recoverySummary.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value.isEmpty ? nil : value
+    }
+
+    var normalizedRecoveryMetadata: String? {
+        let value = recoveryMetadata.trimmingCharacters(in: .whitespacesAndNewlines)
         return value.isEmpty ? nil : value
     }
 

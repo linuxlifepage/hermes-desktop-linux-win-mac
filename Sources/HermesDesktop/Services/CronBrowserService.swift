@@ -334,6 +334,9 @@ final class CronBrowserService: @unchecked Sendable {
                 "id": job_id,
                 "name": name,
                 "prompt": prompt,
+                "script": first_text(item.get("script"), payload.get("script")),
+                "workdir": first_text(item.get("workdir"), item.get("cwd"), payload.get("workdir"), payload.get("cwd")),
+                "no_agent": normalize_bool(item.get("no_agent")) or False,
                 "skills": skills,
                 "model": first_text(item.get("model"), payload.get("model")),
                 "provider": first_text(item.get("provider"), item.get("billing_provider"), payload.get("provider")),
@@ -613,6 +616,9 @@ final class CronBrowserService: @unchecked Sendable {
 
         name = normalize_text(draft.get("name"))
         prompt_text = normalize_text(draft.get("prompt"))
+        script_path = normalize_text(draft.get("script"))
+        workdir = normalize_text(draft.get("workdir"))
+        no_agent = bool(draft.get("no_agent"))
         schedule_expr = normalize_text(draft.get("schedule"))
         skills = normalize_list(draft.get("skills"))
         model = normalize_text(draft.get("model"))
@@ -624,7 +630,9 @@ final class CronBrowserService: @unchecked Sendable {
 
         if name is None:
             fail("The cron job title is required.")
-        if prompt_text is None:
+        if no_agent and script_path is None:
+            fail("The cron job script is required for script-only jobs.")
+        if not no_agent and prompt_text is None:
             fail("The cron job prompt is required.")
         if schedule_expr is None:
             fail("The cron job schedule is required.")
@@ -647,7 +655,10 @@ final class CronBrowserService: @unchecked Sendable {
                 job = {
                     "id": job_id,
                     "name": name,
-                    "prompt": prompt_text,
+                    "prompt": prompt_text or "",
+                    "script": script_path,
+                    "workdir": workdir,
+                    "no_agent": no_agent,
                     "skills": skills,
                     "model": model,
                     "provider": provider,
@@ -703,7 +714,10 @@ final class CronBrowserService: @unchecked Sendable {
             schedule_changed = old_expr != schedule_expr
 
             target["name"] = name
-            target["prompt"] = prompt_text
+            target["prompt"] = prompt_text or ""
+            target["script"] = script_path
+            target["workdir"] = workdir
+            target["no_agent"] = no_agent
             target["skills"] = skills
             target.pop("skill", None)
             target["model"] = model
@@ -805,6 +819,9 @@ private struct CronMutationRequest: Encodable {
 private struct CronMutationDraft: Encodable {
     let name: String
     let prompt: String
+    let script: String?
+    let workdir: String?
+    let noAgent: Bool
     let schedule: String
     let skills: [String]
     let model: String?
@@ -816,6 +833,9 @@ private struct CronMutationDraft: Encodable {
     enum CodingKeys: String, CodingKey {
         case name
         case prompt
+        case script
+        case workdir
+        case noAgent = "no_agent"
         case schedule
         case skills
         case model
@@ -828,6 +848,9 @@ private struct CronMutationDraft: Encodable {
     init(draft: CronJobDraft) {
         self.name = draft.normalizedName
         self.prompt = draft.normalizedPrompt
+        self.script = draft.normalizedScript
+        self.workdir = draft.normalizedWorkdir
+        self.noAgent = draft.noAgent
         self.schedule = draft.schedule.expression ?? ""
         self.skills = draft.normalizedSkills
         self.model = draft.normalizedModel

@@ -510,6 +510,25 @@ struct KanbanView: View {
                 onComplete: { taskID, result in
                     await appState.completeKanbanTask(taskID: taskID, result: result)
                 },
+                onReclaim: { taskID, reason in
+                    await appState.reclaimKanbanTask(taskID: taskID, reason: reason)
+                },
+                onReassign: { taskID, assignee, reclaimFirst, reason in
+                    await appState.reassignKanbanTask(
+                        taskID: taskID,
+                        assignee: assignee,
+                        reclaimFirst: reclaimFirst,
+                        reason: reason
+                    )
+                },
+                onEditResult: { taskID, result, summary, metadataJSON in
+                    await appState.editKanbanTaskResult(
+                        taskID: taskID,
+                        result: result,
+                        summary: summary,
+                        metadataJSON: metadataJSON
+                    )
+                },
                 onArchive: { taskID in
                     await appState.archiveKanbanTask(taskID: taskID)
                 },
@@ -691,6 +710,8 @@ private enum KanbanActionKind: Hashable {
     case assign
     case comment
     case complete
+    case recovery
+    case editResult
     case block
 }
 
@@ -969,6 +990,10 @@ private struct KanbanTaskCard: View {
                 if !task.parentIDs.isEmpty {
                     KanbanTaskMetadataChip(text: "\(task.parentIDs.count)", systemImage: "link")
                 }
+
+                if task.hasActiveWarnings {
+                    KanbanTaskMetadataChip(text: "\(task.warnings?.count ?? 0)", systemImage: "exclamationmark.triangle", tint: .orange, isMonospaced: true)
+                }
             }
 
             if let latest = task.latestActivityDate {
@@ -1229,6 +1254,9 @@ private struct KanbanTaskDetailView: View {
     let onBlock: (String, String?) async -> Void
     let onUnblock: (String) async -> Void
     let onComplete: (String, String?) async -> Void
+    let onReclaim: (String, String?) async -> Void
+    let onReassign: (String, String?, Bool, String?) async -> Void
+    let onEditResult: (String, String, String?, String?) async -> Void
     let onArchive: (String) async -> Void
     let onDelete: (String) async -> Void
     let onSetHomeSubscription: (String, KanbanHomeChannel, Bool) async -> Bool
@@ -1255,6 +1283,7 @@ private struct KanbanTaskDetailView: View {
                     } else {
                         metadataPanel(task)
                         actionPanel(task)
+                        recoveryWarningPanel(task)
 
                         if let body = task.trimmedBody {
                             HermesSurfacePanel(
@@ -1348,8 +1377,12 @@ private struct KanbanTaskDetailView: View {
     private func resetDraft() {
         draft = KanbanActionDraft(
             comment: "",
-            result: "",
+            result: task?.trimmedResult ?? "",
             blockReason: "",
+            recoveryReason: "",
+            recoverySummary: task?.trimmedResult ?? "",
+            recoveryMetadata: "",
+            reclaimBeforeReassign: task?.isRunning == true,
             assignee: task?.assignee ?? "",
             body: task?.trimmedBody ?? "",
             tenant: task?.tenant ?? "",
@@ -1806,6 +1839,131 @@ private struct KanbanTaskDetailView: View {
                     }
                 }
 
+                if task.hasActiveWarnings || task.isRunning || task.status == .done {
+                    KanbanActionDivider()
+
+                    KanbanActionDisclosureRow(
+                        title: "Recovery",
+                        summary: recoverySummary(for: task),
+                        systemImage: "wrench.and.screwdriver",
+                        isExpanded: expandedAction == .recovery,
+                        isDisabled: operationInFlight,
+                        onToggle: { toggleAction(.recovery) }
+                    ) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            if let warnings = task.warnings, warnings.hasWarnings {
+                                KanbanRecoveryWarningSummary(warnings: warnings)
+                            }
+
+                            if task.isRunning {
+                                KanbanFormField(label: "Reason") {
+                                    TextField(L10n.string("Optional recovery reason"), text: $draft.recoveryReason)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+
+                                Button(L10n.string("Reclaim Running Claim")) {
+                                    Task {
+                                        await onReclaim(task.id, draft.normalizedRecoveryReason)
+                                        expandedAction = nil
+                                    }
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(operationInFlight)
+                            }
+
+                            ViewThatFits(in: .horizontal) {
+                                HStack(spacing: 8) {
+                                    ComboBoxTextField(text: $draft.assignee, suggestions: assignees, placeholder: "unassigned")
+
+                                    Toggle(L10n.string("Reclaim first"), isOn: $draft.reclaimBeforeReassign)
+                                        .toggleStyle(.checkbox)
+                                        .disabled(!task.isRunning)
+
+                                    Button(L10n.string("Reassign")) {
+                                        Task {
+                                            await onReassign(
+                                                task.id,
+                                                draft.normalizedAssignee,
+                                                draft.reclaimBeforeReassign,
+                                                draft.normalizedRecoveryReason
+                                            )
+                                            expandedAction = nil
+                                        }
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .disabled(operationInFlight || draft.normalizedAssignee == task.assignee)
+                                }
+
+                                VStack(alignment: .leading, spacing: 8) {
+                                    ComboBoxTextField(text: $draft.assignee, suggestions: assignees, placeholder: "unassigned")
+
+                                    Toggle(L10n.string("Reclaim first"), isOn: $draft.reclaimBeforeReassign)
+                                        .toggleStyle(.checkbox)
+                                        .disabled(!task.isRunning)
+
+                                    Button(L10n.string("Reassign")) {
+                                        Task {
+                                            await onReassign(
+                                                task.id,
+                                                draft.normalizedAssignee,
+                                                draft.reclaimBeforeReassign,
+                                                draft.normalizedRecoveryReason
+                                            )
+                                            expandedAction = nil
+                                        }
+                                    }
+                                    .buttonStyle(.borderedProminent)
+                                    .disabled(operationInFlight || draft.normalizedAssignee == task.assignee)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if task.status == .done {
+                    KanbanActionDivider()
+
+                    KanbanActionDisclosureRow(
+                        title: "Edit Result",
+                        summary: "Backfill completion handoff and clear warnings",
+                        systemImage: "square.and.pencil",
+                        isExpanded: expandedAction == .editResult,
+                        isDisabled: operationInFlight,
+                        onToggle: { toggleAction(.editResult) }
+                    ) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            KanbanFormField(label: "Result") {
+                                KanbanTextEditor(text: $draft.result, placeholder: L10n.string("Updated completion handoff"))
+                            }
+
+                            KanbanFormField(label: "Summary") {
+                                TextField(L10n.string("Optional structured handoff summary"), text: $draft.recoverySummary)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+
+                            KanbanFormField(label: "Metadata JSON") {
+                                TextField(L10n.string(#"Optional: {"changed_files":["README.md"]}"#), text: $draft.recoveryMetadata)
+                                    .textFieldStyle(.roundedBorder)
+                                    .font(.system(.body, design: .monospaced))
+                            }
+
+                            Button(L10n.string("Save Result")) {
+                                Task {
+                                    await onEditResult(
+                                        task.id,
+                                        draft.normalizedResult ?? "",
+                                        draft.normalizedRecoverySummary,
+                                        draft.normalizedRecoveryMetadata
+                                    )
+                                    expandedAction = nil
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(operationInFlight || draft.normalizedResult == nil)
+                        }
+                    }
+                }
+
                 if task.canBlock {
                     KanbanActionDivider()
 
@@ -1857,6 +2015,34 @@ private struct KanbanTaskDetailView: View {
             draft.normalizedTenantForUpdate != (task.tenant ?? "") ||
             draft.priority != task.priority ||
             draft.skills != task.skills
+    }
+
+    @ViewBuilder
+    private func recoveryWarningPanel(_ task: KanbanTask) -> some View {
+        if let warnings = task.warnings, warnings.hasWarnings {
+            HermesSurfacePanel(
+                title: warnings.displayTitle,
+                subtitle: "Hermes Agent marked this task for recovery."
+            ) {
+                VStack(alignment: .leading, spacing: 12) {
+                    KanbanRecoveryWarningSummary(warnings: warnings)
+
+                    Text(L10n.string("Use Recovery to reclaim a stuck claim, retry with another assignee, or edit the final result after verifying the board state."))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private func recoverySummary(for task: KanbanTask) -> String {
+        if task.hasActiveWarnings {
+            return L10n.string("Review warnings and retry safely")
+        }
+        if task.isRunning {
+            return L10n.string("Release or reassign a running worker")
+        }
+        return L10n.string("Edit a completed handoff")
     }
 
     private func dependencySummary(_ ids: [String]) -> String {
@@ -2126,6 +2312,41 @@ private struct KanbanHomeChannelRow: View {
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(isDisabled)
+        }
+    }
+}
+
+private struct KanbanRecoveryWarningSummary: View {
+    let warnings: KanbanTaskWarnings
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
+                .frame(width: 18)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text(L10n.string(warnings.displayMessage))
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+
+                HStack(spacing: 8) {
+                    HermesBadge(text: L10n.string("%@ warning events", "\(warnings.count)"), tint: .orange)
+
+                    if let latestDate = warnings.latestDate {
+                        Text(DateFormatters.relativeFormatter().localizedString(for: latestDate, relativeTo: .now))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.orange.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.orange.opacity(0.18), lineWidth: 1)
         }
     }
 }

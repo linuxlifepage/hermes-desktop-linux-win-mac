@@ -51,7 +51,15 @@ struct KanbanModelsTests {
                 "comment_count": 2,
                 "event_count": 5,
                 "run_count": 1,
-                "latest_event_at": 1800000300
+                "latest_event_at": 1800000300,
+                "warnings": {
+                  "count": 2,
+                  "kinds": {
+                    "completion_blocked_hallucination": 1,
+                    "suspected_hallucinated_references": 1
+                  },
+                  "latest_at": 1800000250
+                }
               }
             ],
             "assignees": [
@@ -90,6 +98,9 @@ struct KanbanModelsTests {
         #expect(board.tasks[0].workspaceKind == .scratch)
         #expect(board.tasks[0].priorityLabel == "P+3")
         #expect(board.tasks[0].progressLabel == "1/3 done")
+        #expect(board.tasks[0].hasActiveWarnings)
+        #expect(board.tasks[0].warnings?.includesBlockedCompletion == true)
+        #expect(board.tasks[0].matchesSearch("reference warnings"))
         #expect(board.stats?.now == 1800000400)
         #expect(board.tasks[0].matchesSearch("packaging"))
         #expect(board.tasks[0].matchesSearch("release-check"))

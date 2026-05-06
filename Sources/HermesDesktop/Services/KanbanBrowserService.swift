@@ -348,6 +348,92 @@ final class KanbanBrowserService: @unchecked Sendable {
         )
     }
 
+    func reclaimTask(connection: ConnectionProfile, boardSlug: String, taskID: String, reason: String?) async throws {
+        _ = try await performMutation(
+            connection: connection,
+            request: KanbanMutationRequest(
+                kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
+                author: connection.resolvedHermesProfileName,
+                action: "reclaim",
+                taskID: taskID,
+                title: nil,
+                body: nil,
+                assignee: nil,
+                priority: nil,
+                tenant: nil,
+                skills: nil,
+                triage: nil,
+                text: reason,
+                result: nil,
+                maxSpawn: nil
+            )
+        )
+    }
+
+    func reassignTask(
+        connection: ConnectionProfile,
+        boardSlug: String,
+        taskID: String,
+        assignee: String?,
+        reclaimFirst: Bool,
+        reason: String?
+    ) async throws {
+        _ = try await performMutation(
+            connection: connection,
+            request: KanbanMutationRequest(
+                kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
+                author: connection.resolvedHermesProfileName,
+                action: "reassign",
+                taskID: taskID,
+                title: nil,
+                body: nil,
+                assignee: assignee,
+                priority: nil,
+                tenant: nil,
+                skills: nil,
+                triage: nil,
+                text: reason,
+                result: nil,
+                maxSpawn: nil,
+                reclaimFirst: reclaimFirst
+            )
+        )
+    }
+
+    func editCompletedTaskResult(
+        connection: ConnectionProfile,
+        boardSlug: String,
+        taskID: String,
+        result: String,
+        summary: String?,
+        metadataJSON: String?
+    ) async throws {
+        _ = try await performMutation(
+            connection: connection,
+            request: KanbanMutationRequest(
+                kanbanHome: connection.remoteKanbanHomePath,
+                boardSlug: boardSlug,
+                author: connection.resolvedHermesProfileName,
+                action: "edit_result",
+                taskID: taskID,
+                title: nil,
+                body: nil,
+                assignee: nil,
+                priority: nil,
+                tenant: nil,
+                skills: nil,
+                triage: nil,
+                text: nil,
+                result: result,
+                maxSpawn: nil,
+                summary: summary,
+                metadataJSON: metadataJSON
+            )
+        )
+    }
+
     func archiveTask(connection: ConnectionProfile, boardSlug: String, taskID: String) async throws {
         _ = try await performMutation(
             connection: connection,
@@ -619,6 +705,27 @@ final class KanbanBrowserService: @unchecked Sendable {
                 result.append(value)
             return result
 
+        def normalized_metadata_object():
+            raw = payload.get("metadata")
+            if raw is None:
+                raw = payload.get("metadata_json")
+            if raw is None:
+                return None
+            if isinstance(raw, dict):
+                return raw
+            if not isinstance(raw, str):
+                fail("Recovery metadata must be a JSON object.")
+            text = raw.strip()
+            if not text:
+                return None
+            try:
+                parsed = json.loads(text)
+            except Exception as exc:
+                fail(f"Recovery metadata is not valid JSON: {exc}")
+            if not isinstance(parsed, dict):
+                fail("Recovery metadata must be a JSON object.")
+            return parsed
+
         @contextlib.contextmanager
         def write_txn_for(kb, conn):
             if kb is not None and hasattr(kb, "write_txn"):
@@ -793,6 +900,27 @@ final class KanbanBrowserService: @unchecked Sendable {
                         fail(f"No such Kanban task: {task_id}")
                     return ("Task assigned.", task_id, None)
 
+                if action == "reclaim":
+                    if not hasattr(kb, "reclaim_task"):
+                        fail("This Hermes Agent build does not support Kanban recovery reclaim. Run `hermes update` on the host.")
+                    if not kb.reclaim_task(conn, task_id, reason=normalize_text(payload.get("text"))):
+                        fail(f"Cannot reclaim Kanban task: {task_id}")
+                    return ("Task reclaimed.", task_id, None)
+
+                if action == "reassign":
+                    if not hasattr(kb, "reassign_task"):
+                        fail("This Hermes Agent build does not support Kanban recovery reassign. Run `hermes update` on the host.")
+                    assignee = normalize_text(payload.get("assignee"))
+                    if not kb.reassign_task(
+                        conn,
+                        task_id,
+                        assignee,
+                        reclaim_first=bool(payload.get("reclaim_first")),
+                        reason=normalize_text(payload.get("text")),
+                    ):
+                        fail(f"Cannot reassign Kanban task: {task_id}")
+                    return ("Task reassigned.", task_id, None)
+
                 if action == "block":
                     reason = normalize_text(payload.get("text"))
                     if reason:
@@ -811,6 +939,22 @@ final class KanbanBrowserService: @unchecked Sendable {
                     if not kb.complete_task(conn, task_id, result=result, summary=result):
                         fail(f"Cannot complete Kanban task: {task_id}")
                     return ("Task completed.", task_id, None)
+
+                if action == "edit_result":
+                    if not hasattr(kb, "edit_completed_task_result"):
+                        fail("This Hermes Agent build does not support editing completed Kanban task results. Run `hermes update` on the host.")
+                    result = normalize_text(payload.get("result"))
+                    if result is None:
+                        fail("A recovery result is required.")
+                    if not kb.edit_completed_task_result(
+                        conn,
+                        task_id,
+                        result=result,
+                        summary=normalize_text(payload.get("summary")),
+                        metadata=normalized_metadata_object(),
+                    ):
+                        fail(f"Cannot edit completed Kanban task: {task_id}")
+                    return ("Task result edited.", task_id, None)
 
                 if action == "archive":
                     if not kb.archive_task(conn, task_id):
@@ -952,6 +1096,25 @@ final class KanbanBrowserService: @unchecked Sendable {
                 run_hermes_cli(kanban_cli_args(board_slug, ["assign", task_id, assignee]))
                 return ("Task assigned.", task_id, None)
 
+            if action == "reclaim":
+                args = kanban_cli_args(board_slug, ["reclaim", task_id])
+                reason = normalize_text(payload.get("text"))
+                if reason:
+                    args.extend(["--reason", reason])
+                run_hermes_cli(args)
+                return ("Task reclaimed.", task_id, None)
+
+            if action == "reassign":
+                assignee = normalize_text(payload.get("assignee")) or "none"
+                args = kanban_cli_args(board_slug, ["reassign", task_id, assignee])
+                if bool(payload.get("reclaim_first")):
+                    args.append("--reclaim")
+                reason = normalize_text(payload.get("text"))
+                if reason:
+                    args.extend(["--reason", reason])
+                run_hermes_cli(args)
+                return ("Task reassigned.", task_id, None)
+
             if action == "block":
                 reason = normalize_text(payload.get("text"))
                 args = kanban_cli_args(board_slug, ["block", task_id])
@@ -971,6 +1134,20 @@ final class KanbanBrowserService: @unchecked Sendable {
                     args.extend(["--result", result])
                 run_hermes_cli(args)
                 return ("Task completed.", task_id, None)
+
+            if action == "edit_result":
+                result = normalize_text(payload.get("result"))
+                if result is None:
+                    fail("A recovery result is required.")
+                args = kanban_cli_args(board_slug, ["edit", task_id, "--result", result])
+                summary = normalize_text(payload.get("summary"))
+                if summary:
+                    args.extend(["--summary", summary])
+                metadata = normalized_metadata_object()
+                if metadata is not None:
+                    args.extend(["--metadata", json.dumps(metadata, ensure_ascii=False)])
+                run_hermes_cli(args)
+                return ("Task result edited.", task_id, None)
 
             if action == "archive":
                 run_hermes_cli(kanban_cli_args(board_slug, ["archive", task_id]))
@@ -1573,6 +1750,59 @@ final class KanbanBrowserService: @unchecked Sendable {
                 pass
             return []
 
+        WARNING_EVENT_KINDS = (
+            "completion_blocked_hallucination",
+            "suspected_hallucinated_references",
+        )
+
+        def compute_warnings_for_tasks(conn, task_ids=None):
+            if not conn or not table_exists(conn, "task_events"):
+                return {}
+            params = ()
+            if task_ids is not None:
+                task_ids = [str(item) for item in task_ids if item]
+                if not task_ids:
+                    return {}
+                placeholders = ",".join(["?"] * len(task_ids))
+                sql = (
+                    "SELECT task_id, kind, created_at FROM task_events "
+                    f"WHERE task_id IN ({placeholders}) AND kind IN "
+                    "('completion_blocked_hallucination', "
+                    "'suspected_hallucinated_references', 'completed', 'edited') "
+                    "ORDER BY task_id, id"
+                )
+                params = tuple(task_ids)
+            else:
+                sql = (
+                    "SELECT task_id, kind, created_at FROM task_events "
+                    "WHERE kind IN "
+                    "('completion_blocked_hallucination', "
+                    "'suspected_hallucinated_references', 'completed', 'edited') "
+                    "ORDER BY task_id, id"
+                )
+
+            result = {}
+            try:
+                rows = conn.execute(sql, params).fetchall()
+            except Exception:
+                return {}
+            for row in rows:
+                task_id = row["task_id"]
+                kind = row["kind"]
+                if kind in ("completed", "edited"):
+                    result.pop(task_id, None)
+                    continue
+                bucket = result.setdefault(task_id, {"count": 0, "kinds": {}, "latest_at": 0})
+                bucket["count"] += 1
+                bucket["kinds"][kind] = int(bucket["kinds"].get(kind, 0) or 0) + 1
+                latest = int_value(row["created_at"], 0) or 0
+                if latest > int(bucket.get("latest_at") or 0):
+                    bucket["latest_at"] = latest
+            return result
+
+        def warning_for_task(conn, task_id):
+            return compute_warnings_for_tasks(conn, [task_id]).get(task_id)
+
         def task_object_to_dict(task, conn=None):
             task_id = getattr(task, "id", "")
             parent_ids = []
@@ -1588,6 +1818,9 @@ final class KanbanBrowserService: @unchecked Sendable {
                 event_count = count_rows(conn, "task_events", "task_id", task_id)
                 run_count = count_rows(conn, "task_runs", "task_id", task_id)
                 latest_event_at = latest_event_timestamp(conn, task_id)
+                warnings = warning_for_task(conn, task_id)
+            else:
+                warnings = None
             return {
                 "id": task_id,
                 "title": getattr(task, "title", None),
@@ -1617,6 +1850,7 @@ final class KanbanBrowserService: @unchecked Sendable {
                 "event_count": event_count,
                 "run_count": run_count,
                 "latest_event_at": latest_event_at,
+                "warnings": warnings,
             }
 
         def task_row_to_dict(row, conn=None):
@@ -1653,6 +1887,7 @@ final class KanbanBrowserService: @unchecked Sendable {
                 "event_count": count_rows(conn, "task_events", "task_id", task_id) if conn else 0,
                 "run_count": count_rows(conn, "task_runs", "task_id", task_id) if conn else 0,
                 "latest_event_at": latest_event_timestamp(conn, task_id) if conn else None,
+                "warnings": warning_for_task(conn, task_id) if conn else None,
             }
 
         def count_rows(conn, table, column, value):
@@ -2158,6 +2393,9 @@ private struct KanbanMutationRequest: Encodable {
     let maxSpawn: Int?
     var parentIDs: [String]? = nil
     var childIDs: [String]? = nil
+    var summary: String? = nil
+    var metadataJSON: String? = nil
+    var reclaimFirst: Bool? = nil
 
     enum CodingKeys: String, CodingKey {
         case kanbanHome = "kanban_home"
@@ -2177,5 +2415,8 @@ private struct KanbanMutationRequest: Encodable {
         case maxSpawn = "max_spawn"
         case parentIDs = "parent_ids"
         case childIDs = "child_ids"
+        case summary
+        case metadataJSON = "metadata_json"
+        case reclaimFirst = "reclaim_first"
     }
 }

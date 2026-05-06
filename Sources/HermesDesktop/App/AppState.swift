@@ -1792,6 +1792,55 @@ final class AppState: ObservableObject {
         }
     }
 
+    func reclaimKanbanTask(taskID: String, reason: String?) async {
+        await operateOnKanbanTask(
+            taskID: taskID,
+            successMessage: "Kanban task reclaimed",
+            failureMessage: "Unable to reclaim Kanban task"
+        ) { profile, boardSlug in
+            try await kanbanBrowserService.reclaimTask(
+                connection: profile,
+                boardSlug: boardSlug,
+                taskID: taskID,
+                reason: reason
+            )
+        }
+    }
+
+    func reassignKanbanTask(taskID: String, assignee: String?, reclaimFirst: Bool, reason: String?) async {
+        await operateOnKanbanTask(
+            taskID: taskID,
+            successMessage: "Kanban task reassigned",
+            failureMessage: "Unable to reassign Kanban task"
+        ) { profile, boardSlug in
+            try await kanbanBrowserService.reassignTask(
+                connection: profile,
+                boardSlug: boardSlug,
+                taskID: taskID,
+                assignee: assignee,
+                reclaimFirst: reclaimFirst,
+                reason: reason
+            )
+        }
+    }
+
+    func editKanbanTaskResult(taskID: String, result: String, summary: String?, metadataJSON: String?) async {
+        await operateOnKanbanTask(
+            taskID: taskID,
+            successMessage: "Kanban task result edited",
+            failureMessage: "Unable to edit Kanban task result"
+        ) { profile, boardSlug in
+            try await kanbanBrowserService.editCompletedTaskResult(
+                connection: profile,
+                boardSlug: boardSlug,
+                taskID: taskID,
+                result: result,
+                summary: summary,
+                metadataJSON: metadataJSON
+            )
+        }
+    }
+
     func archiveKanbanTask(taskID: String) async {
         await operateOnKanbanTask(
             taskID: taskID,

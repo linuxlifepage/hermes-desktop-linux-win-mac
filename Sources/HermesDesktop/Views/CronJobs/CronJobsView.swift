@@ -329,6 +329,10 @@ private struct CronJobCardRow: View {
                     HStack(spacing: 8) {
                         CronStatusBadge(job: job)
 
+                        if job.noAgent {
+                            HermesBadge(text: "Script", tint: .blue)
+                        }
+
                         if let model = job.displayModel {
                             HermesBadge(text: model, tint: .orange)
                         }
@@ -430,14 +434,37 @@ private struct CronJobDetailView: View {
                         }
                     }
 
-                    HermesSurfacePanel(
-                        title: "Prompt",
-                        subtitle: "Payload Hermes will run for this scheduled job."
-                    ) {
-                        HermesInsetSurface {
-                            Text(job.trimmedPrompt ?? L10n.string("No prompt payload saved for this job."))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .textSelection(.enabled)
+                    if job.noAgent {
+                        HermesSurfacePanel(
+                            title: "Script",
+                            subtitle: "Script-only jobs run without waking an agent."
+                        ) {
+                            VStack(alignment: .leading, spacing: 12) {
+                                HermesLabeledValue(
+                                    label: "Script path",
+                                    value: job.trimmedScript ?? L10n.string("No script configured"),
+                                    isMonospaced: true
+                                )
+
+                                if let workdir = job.trimmedWorkdir {
+                                    HermesLabeledValue(
+                                        label: "Working directory",
+                                        value: workdir,
+                                        isMonospaced: true
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        HermesSurfacePanel(
+                            title: "Prompt",
+                            subtitle: "Payload Hermes will run for this scheduled job."
+                        ) {
+                            HermesInsetSurface {
+                                Text(job.trimmedPrompt ?? L10n.string("No prompt payload saved for this job."))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                            }
                         }
                     }
                 } else {
@@ -478,6 +505,10 @@ private struct CronJobDetailView: View {
 
                     HStack(spacing: 8) {
                         CronStatusBadge(job: job)
+
+                        if job.noAgent {
+                            HermesBadge(text: "Script Only", tint: .blue)
+                        }
 
                         if let model = job.displayModel {
                             HermesBadge(text: model, tint: .orange)
@@ -543,6 +574,12 @@ private struct CronJobDetailView: View {
                     label: "Schedule",
                     value: job.resolvedScheduleDisplay,
                     emphasizeValue: true
+                )
+
+                HermesLabeledValue(
+                    label: "Mode",
+                    value: job.executionModeTitle,
+                    emphasizeValue: job.noAgent
                 )
 
                 if let timezone = job.schedule?.timezone {
@@ -720,19 +757,40 @@ private struct CronJobEditorView: View {
                         .textFieldStyle(.roundedBorder)
                 }
 
-                CronFormField(label: "Prompt") {
-                    TextEditor(text: $draft.prompt)
-                        .font(.body)
-                        .frame(minHeight: 170)
-                        .padding(10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .fill(Color(NSColor.textBackgroundColor))
-                        )
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 14, style: .continuous)
-                                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
-                        }
+                Toggle(L10n.string("Script-only job"), isOn: $draft.noAgent)
+                    .toggleStyle(.checkbox)
+
+                if draft.noAgent {
+                    CronFormField(label: "Script Path") {
+                        TextField(L10n.string("memory-watchdog.sh"), text: $draft.script)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.body, design: .monospaced))
+                    }
+
+                    CronFormField(label: "Working Directory") {
+                        TextField(L10n.string("Optional absolute path"), text: $draft.workdir)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(.body, design: .monospaced))
+                    }
+
+                    Text(L10n.string("Script-only jobs run a script from the host's Hermes scripts directory and deliver stdout directly without creating an agent turn."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    CronFormField(label: "Prompt") {
+                        TextEditor(text: $draft.prompt)
+                            .font(.body)
+                            .frame(minHeight: 170)
+                            .padding(10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(Color(NSColor.textBackgroundColor))
+                            )
+                            .overlay {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                            }
+                    }
                 }
             }
         }
@@ -822,11 +880,6 @@ private struct CronJobEditorView: View {
             subtitle: "Delivery is required. Skills and model overrides remain optional."
         ) {
             VStack(alignment: .leading, spacing: 14) {
-                CronFormField(label: "Skills") {
-                    TextField(L10n.string("daily-robi, morning-briefing"), text: $draft.skillsText)
-                        .textFieldStyle(.roundedBorder)
-                }
-
                 CronFormField(label: "Delivery") {
                     Picker(L10n.string("Delivery"), selection: deliveryPresetBinding) {
                         ForEach(CronDeliveryPreset.allCases) { preset in
@@ -853,19 +906,26 @@ private struct CronJobEditorView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                CronFormField(label: "Model") {
-                    TextField(L10n.string("gpt-5.4-mini"), text: $draft.model)
-                        .textFieldStyle(.roundedBorder)
-                }
+                if !draft.noAgent {
+                    CronFormField(label: "Skills") {
+                        TextField(L10n.string("daily-robi, morning-briefing"), text: $draft.skillsText)
+                            .textFieldStyle(.roundedBorder)
+                    }
 
-                CronFormField(label: "Provider") {
-                    TextField(L10n.string("openai"), text: $draft.provider)
-                        .textFieldStyle(.roundedBorder)
-                }
+                    CronFormField(label: "Model") {
+                        TextField(L10n.string("gpt-5.4-mini"), text: $draft.model)
+                            .textFieldStyle(.roundedBorder)
+                    }
 
-                CronFormField(label: "Base URL") {
-                    TextField(L10n.string("https://api.openai.com/v1"), text: $draft.baseURL)
-                        .textFieldStyle(.roundedBorder)
+                    CronFormField(label: "Provider") {
+                        TextField(L10n.string("openai"), text: $draft.provider)
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    CronFormField(label: "Base URL") {
+                        TextField(L10n.string("https://api.openai.com/v1"), text: $draft.baseURL)
+                            .textFieldStyle(.roundedBorder)
+                    }
                 }
             }
         }
