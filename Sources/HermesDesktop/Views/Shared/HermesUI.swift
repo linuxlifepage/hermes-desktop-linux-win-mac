@@ -860,7 +860,7 @@ struct HermesCollapsibleHSplitView<Primary: View, Detail: View>: View {
     let detailMinWidth: CGFloat
     let primary: Primary
     let detail: Detail
-    private let collapseAnimation = Animation.easeInOut(duration: 0.18)
+    private let collapseAnimation = Animation.snappy(duration: 0.16, extraBounce: 0)
 
     init(
         layout: Binding<HermesSplitLayout>,
@@ -1050,7 +1050,7 @@ struct HermesPersistentHSplitView<Primary: View, Detail: View>: NSViewRepresenta
             constrainMinCoordinate proposedMinimumPosition: CGFloat,
             ofSubviewAt dividerIndex: Int
         ) -> CGFloat {
-            effectivePrimaryMinimum(in: splitView) ?? proposedMinimumPosition
+            return effectivePrimaryMinimum(in: splitView) ?? proposedMinimumPosition
         }
 
         func splitView(

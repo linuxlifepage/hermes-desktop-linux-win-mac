@@ -42,9 +42,7 @@ struct RootView: View {
                                 ? L10n.string("Show Workspace Sidebar")
                                 : L10n.string("Hide Workspace Sidebar")
                         ) {
-                            withAnimation(.easeInOut(duration: 0.18)) {
-                                workspaceSidebarSplitLayout.wrappedValue.isPrimaryCollapsed.toggle()
-                            }
+                            workspaceSidebarSplitLayout.wrappedValue.isPrimaryCollapsed.toggle()
                         }
 
                         HermesCollapseToolbarButton(
@@ -191,9 +189,7 @@ struct RootView: View {
 
     private func toggleCurrentWorkbenchPrimaryColumn() {
         guard let layout = currentWorkbenchPrimaryColumnLayout else { return }
-        withAnimation(.easeInOut(duration: 0.18)) {
-            layout.wrappedValue.isPrimaryCollapsed.toggle()
-        }
+        layout.wrappedValue.isPrimaryCollapsed.toggle()
     }
 
     private var availableSections: [AppSection] {
