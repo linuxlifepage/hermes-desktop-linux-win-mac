@@ -3,32 +3,21 @@
 Native macOS companion for Hermes Agent over SSH.
 
 It turns the daily Hermes loop into something you can actually live in on a
-Mac.
-
-It brings the parts of the workflow that matter most into one focused window:
-sessions, Kanban, workspace files, usage, skills, cron jobs, and a real
-terminal.
+Mac: sessions, Kanban, workspace files, usage, skills, cron jobs, and a real
+terminal in one focused window.
 
 If Hermes is already part of how you work, the app should feel immediately
-legible: same host, same files, same profiles.
+legible. Same host. Same files. Same profiles. Same source of truth.
 
 No browser wrapper. No gateway API. No daemon on the host. No local mirror. No
 extra sync layer slowly drifting away from the machine that actually matters.
 
-That restraint is intentional:
+That restraint is the point of the app.
 
-- connects directly over SSH
-- keeps the Hermes host as the only source of truth
-- does not depend on a gateway API
-- does not mirror files onto your Mac
-- does not install a helper service on the remote host
-
-That is the point of the app.
-
-Hermes Desktop does not invent a softer second version of Hermes. It makes the
-real workflow feel calm, fast, and native on a Mac while keeping the model
-visible. You still know what host you are on, which Hermes profile is active,
-where the canonical state lives, and which path the app is actually using.
+Hermes Desktop does not invent a softer second version of Hermes. It gives the
+real SSH-first workflow a calm, fast, native Mac surface while keeping the model
+visible. You always know which host you are on, which Hermes profile is active,
+which path the app is using, and where the work is happening.
 
 ## Preview
 
@@ -59,95 +48,87 @@ where the canonical state lives, and which path the app is actually using.
   </tr>
 </table>
 
-Six views from a live Hermes host: sessions, Kanban, workspace files, usage,
+Six views from the app: sessions, Kanban, workspace files, usage,
 skills, and terminal workflows.
 
-## What You Get
+## At A Glance
 
-- a native macOS workspace for the Hermes host you already use over SSH
-- profile-aware connection handling for the default Hermes home and named
-  Hermes profiles on the same host
-- the real remote state in one place: sessions, Kanban, workspace files, usage,
-  skills, cron jobs, and terminal work
-- a session workbench for searching session metadata and message content,
-  reading transcripts, pinning important sessions, continuing a chat, and
-  resuming the same session in Terminal
-- a native Kanban workspace for the upstream host-wide Kanban home: the default
-  `~/.hermes/kanban.db` board plus additional upstream boards when the host
-  supports them
-- direct editing for canonical Hermes files, selected remote text files, and
-  remote `SKILL.md` files, with conflict checks before save
-- an embedded SSH terminal with tabs, themes, and enough room for real
-  multi-agent work across hosts and profiles
-- a universal Mac release for Apple Silicon and Intel, with English,
-  Simplified Chinese, and Russian localization resources in the app bundle
+Hermes Desktop is for people who want a native Mac workbench for the Hermes
+host they already use, without adding another layer to trust.
 
-If Hermes runs there and SSH already works, Hermes Desktop will usually meet you
-there. That includes:
+- connects directly over SSH
+- keeps the Hermes host as the only source of truth
+- works with multiple Hermes profiles for a multi-agent workflow
+- reads the real remote sessions, Kanban, cron jobs, skills, files, and usage
+- includes an embedded SSH terminal for the moments where the shell is still
+  the right tool
+- ships as a universal macOS app for Apple Silicon and Intel Macs
+- includes English, Simplified Chinese, and Russian localization resources
 
-- Raspberry Pi
-- another Mac
-- a VPS or remote server
-- the same Mac via `ssh localhost`, a local hostname, or a local SSH alias
+If Hermes runs there and SSH already works, Hermes Desktop will usually meet
+you there. That includes a Raspberry Pi, another Mac, a VPS, a remote server,
+or the same Mac through `ssh localhost` or a local SSH alias.
 
-## Hermes Desktop And The Official Web Dashboard
+## Design Model
 
-Nous Research now ships the official Hermes web dashboard. That is good news.
+The app talks to the selected host over SSH. Sessions come from the remote
+session store. Kanban comes from the upstream Hermes Kanban home. Cron jobs
+come from the remote scheduler state. Files and skills are edited on the host
+with conflict checks before save.
 
-The dashboard is the browser-based management surface for Hermes: configuration,
-API keys, logs, sessions, analytics, cron jobs, skills, and browser chat. It is
-the right place when you want a local web UI around the installation.
+That makes the app easier to reason about. There is no hidden execution layer
+to audit, no shadow state to reconcile, and no ambiguity about which machine
+owns the work.
 
-Hermes Desktop is deliberately different. It is a native Mac workspace for
-people who want to stay close to the host itself: direct SSH, profile-aware
-remote files, sessions, Kanban, cron jobs, editable skills, usage, and a real
-terminal in one focused app.
+That restraint has a practical advantage: Hermes Desktop can remain useful when
+higher-level surfaces are unavailable. If a dashboard, gateway, or agent
+configuration breaks, the app still has the direct SSH path: inspect the host,
+edit the relevant files, open a terminal, and repair the system from the place
+where the state actually lives.
 
-The boundary is simple: browser for administration, Mac app for host work.
-Hermes Desktop stays valuable because it does not create another backend around
-Hermes. It gives the existing SSH path a native surface.
+### Desktop And Web Dashboard
 
-## Trust And Verification
+Hermes also has an official web dashboard. The two tools are complementary.
 
-If you are evaluating whether to trust Hermes Desktop, start here:
+Use the dashboard when you want a browser-based management surface for the
+installation: configuration, API keys, logs, sessions, analytics, cron jobs,
+skills, and browser chat.
 
-- read [SECURITY.md](SECURITY.md) for the current security model: what runs
-  locally, what runs remotely over SSH, what the app stores, and which network
-  calls it makes
-- read [docs/distribution.md](docs/distribution.md) for the current release
-  model, including the limits of ad-hoc signing, what the published checksum
-  does and does not prove, and what you can verify yourself
-- build the app from source with `./scripts/build-macos-app.sh` if you prefer
-  the strongest trust path available in this repo today
+Use Hermes Desktop when you want to work close to the host from your Mac:
+sessions, Kanban, remote files, editable skills, usage, cron jobs, and a real
+terminal without adding another backend around Hermes.
 
-## Before You Download
+The boundary is simple: browser for administration, Mac app for direct host
+work.
 
-Setup is intentionally lightweight. You need only a few things:
+## Before You Install
+
+Setup is intentionally lightweight. Before you install, make sure you have:
 
 - a Mac running macOS 14 or newer
-- SSH access from this Mac that already works in Terminal without interactive
-  prompts
-- the SSH host key already accepted once in Terminal for that target
-- a normal route from this Mac to the Hermes host, such as local LAN, public
-  IP or DNS, VPN, or a Tailscale IP or hostname
+- SSH access from this Mac to the Hermes host
+- the SSH host key already accepted once in Terminal
+- authentication that works without interactive prompts
+- a normal network route to the host, such as LAN, DNS, public IP, VPN, or
+  Tailscale
 - `python3` available on the Hermes host
-- `hermes` available on the host's non-interactive SSH `PATH` for in-app chat
-  turns and terminal resume workflows
-- a Hermes Agent build with upstream Kanban support if you want the native
-  Kanban workspace; multiple-board management appears when the host exposes the
-  newer upstream board APIs
 - Hermes data under the remote user's `~/.hermes`
 
+For in-app chat and terminal resume workflows, the remote `hermes` CLI also
+needs to be available on the host's non-interactive SSH `PATH`.
+
+For the native Kanban workspace, the host needs a Hermes Agent build with
+upstream Kanban support. Newer Kanban features appear automatically when the
+host exposes them.
+
 Simple rule: if this works in Terminal from this Mac without asking for a
-password or host key confirmation, the app is usually ready to work too:
+password or host key confirmation, the app is usually ready too:
 
 ```bash
 ssh your-host
 ```
 
-## Install
-
-Install takes about a minute:
+## Install The App
 
 1. Download `HermesDesktop.app.zip` from the
    [latest GitHub Release](https://github.com/dodo-reach/hermes-desktop/releases/latest).
@@ -158,15 +139,10 @@ Install takes about a minute:
 5. First launch: right click `HermesDesktop.app`, choose `Open`, then confirm
    `Open`.
 
-Hermes Desktop is currently distributed as a universal macOS build for Apple
-Silicon and Intel Macs. The app is ad-hoc signed and not notarized by Apple, so
-macOS may show a warning saying Apple cannot verify it for malware. That is
+Hermes Desktop is currently ad-hoc signed and not notarized by Apple. macOS may
+show a first-launch warning saying Apple cannot verify it for malware. That is
 expected for this distribution model and does not mean macOS found malware in
 Hermes Desktop.
-
-If you want the exact trust and verification details before launching, read
-[docs/distribution.md](docs/distribution.md). If you prefer not to trust the
-release zip, use the [Build From Source](#build-from-source) path instead.
 
 If macOS blocks the first launch:
 
@@ -177,54 +153,27 @@ If macOS blocks the first launch:
 
 Do not disable Gatekeeper or run `sudo` commands to install Hermes Desktop.
 
-## Verify The Download
+For the exact distribution and verification details, read
+[docs/distribution.md](docs/distribution.md). If you prefer not to trust the
+release zip, build from source instead.
 
-Each GitHub Release includes a SHA-256 checksum and a small JSON manifest for
-`HermesDesktop.app.zip`. Compare the checksum with the value printed locally
-after downloading:
-
-```bash
-shasum -a 256 HermesDesktop.app.zip
-```
-
-After installing:
-
-```bash
-codesign --verify --deep --strict /Applications/HermesDesktop.app
-```
-
-If you want to verify the release zip against the published manifest from a
-repo checkout:
-
-```bash
-./scripts/verify-release.sh \
-  /path/to/HermesDesktop.app.zip \
-  /path/to/HermesDesktop.app.zip.manifest.json
-```
-
-For the full explanation of what those checks do and do not establish, see
-[docs/distribution.md](docs/distribution.md).
-
-## Connect Your Hermes Host
+## Connect A Host
 
 Open the app, go to `Connections`, create a profile, then click `Test` and
 `Use Host`.
 
-You have two valid ways to fill the connection. In most cases, an SSH alias is
-the cleanest one:
+You can connect with an SSH alias or with host details directly.
 
-### Option 1: SSH alias
+### Use An SSH Alias
 
-An SSH alias is just a short name saved in your Mac's SSH config, so instead of
-typing a long command every time, you can type something simple like:
+An SSH alias is the cleanest path for most people. It is the short name you
+already use in Terminal:
 
 ```bash
 ssh hermes-home
 ```
 
-That short name usually comes from `~/.ssh/config`.
-
-Example:
+That name usually comes from `~/.ssh/config`:
 
 ```sshconfig
 Host hermes-home
@@ -237,9 +186,9 @@ In the app:
 - set `SSH alias` to `hermes-home`
 - leave `Host`, `User`, and `Port` empty unless you want explicit overrides
 
-### Option 2: host details directly
+### Use Host Details
 
-If you normally connect with something like:
+If you normally connect with:
 
 ```bash
 ssh alex@vps.example.com
@@ -251,301 +200,125 @@ then in the app:
 - `User`: `alex`
 - `Port`: `22` or your real SSH port
 
-### Hermes profiles on the same host
+### Select A Hermes Profile
 
-Hermes Desktop can target either the default Hermes home or a named profile on
-the same SSH host.
+Hermes Desktop can target multiple profiles on the same SSH host.
 
-Examples:
-
-- leave `Hermes profile` empty to use `~/.hermes`
+- leave `Hermes profile` empty to use `~/.hermes`; the app still discovers
+  other profiles available on the active host
 - set `Hermes profile` to `researcher` to use
   `~/.hermes/profiles/researcher`
 
-The important part is what happens after that: the profile selection is not a
-label stuck on a form. It flows through the app.
+The profile is not just a label. It flows through the app: Overview, Sessions,
+Usage, Cron Jobs, Files, Skills, chat, and Terminal all stay aligned with the
+selected host and profile.
 
-Overview resolves against that profile. Usage stays scoped to that profile while
-still being able to show host-wide cross-profile totals. Cron jobs target that
-profile's scheduler state. The terminal launches with the right `HERMES_HOME`.
-And terminal tabs can stay open across different profiles, so it is natural to
-work multiple Hermes agents on the same host side by side.
-
-### Same Mac
+### Connect To The Same Mac
 
 If Hermes runs on the same Mac, the model stays the same: SSH.
 
-Use one of these:
+Use `localhost`, your local hostname, or a local SSH alias. Hermes Desktop
+still connects over SSH and does not read those files directly from disk.
 
-- `localhost`
-- your local hostname
-- a local SSH alias
+### What `Test` Checks
 
-Hermes Desktop still connects over SSH and never reads those files directly.
-
-## What `Test` Checks
-
-`Test` is the preflight, not a cosmetic button.
-
-It checks that:
-
-- the SSH target is reachable
-- authentication works without interactive prompts
-- `python3` is available in the remote SSH environment used by the app
-
-If `Test` passes, `Use Host` should be on solid ground.
+`Test` is a preflight. It checks that the SSH target is reachable,
+authentication works without interactive prompts, and `python3` is available in
+the remote SSH environment used by the app.
 
 Feature-specific requirements, such as the remote `hermes` CLI path and Kanban
 support, are checked when those sections actually run.
 
-## Ways To Chat With Hermes
+## Core Workflows
 
-Hermes Desktop does not replace the terminal surfaces Hermes already gives you.
-It lets you choose the right one for the job:
+Hermes Desktop is intentionally focused. It is not trying to become a cloud
+workspace, a remote IDE, or a generic SFTP client.
 
-- use in-app chat in `Sessions` for quick turns, checking context, or
-  continuing a session while you are already in Hermes Desktop
-- use the embedded `Terminal` for heavier work where you want the shell,
-  command approvals, long-running output, or manual control close at hand; from
-  there you can run `hermes`, `hermes chat`, or a one-shot prompt such as
-  `hermes chat -q "Hello"`
-- use `hermes --tui` in the terminal when you want Hermes Agent's modern TUI
-  for longer interactive sessions, richer overlays, session picking, and the
-  same sessions, slash commands, and config as the classic CLI
-
-All of these paths still run Hermes on the selected host. The choice is about
-surface area and workflow, not about creating a second source of truth.
-
-## What You Will See In The App
+It gives the real Hermes workflow a native workbench:
 
 - `Overview`
-  Confirms the active host, the active Hermes profile, the discovered profiles,
-  tracked paths, cron location, and the session store source.
-- `Files`
-  Lets you edit the canonical Hermes files and bookmark selected remote text
-  files on the active host, with remote conflict checks before save.
+  Confirms the active host, active Hermes profile, discovered profiles,
+  important paths, cron location, and session store source.
 - `Sessions`
-  Reads the real remote session store from `~/.hermes/state.db`, with
-  full-text search across names, IDs, previews, and message content, match
-  snippets, pinned sessions, cleaner metadata, readable transcripts, compact
-  tool-output summaries, in-app chat continuation, safer non-interactive
-  approval handling, preserved transcript scroll position when moving between
-  Sessions and Terminal, terminal resume, refresh-on-entry behavior, and
-  remote deletion.
-- `Cron Jobs`
-  Browses the real Hermes cron definitions on the host, with create, edit,
-  pause, resume, run-now, and delete actions, including agent jobs and
-  script-only jobs that run host scripts without creating an agent turn. It
-  shows the details that matter when you are actually running them: schedule,
-  model, skills, script, workdir, delivery target, and recent status,
-  including the newer all-connected-channels delivery option when the host
-  supports it.
+  Searches and reads the remote session store, including transcript content.
+  You can pin important sessions, continue a chat, resume in Terminal, and keep
+  the session history close while you work.
 - `Kanban`
-  Opens the upstream Hermes Kanban workspace from the host-wide Kanban home:
-  the default board at `~/.hermes/kanban.db`, plus additional boards under
-  `~/.hermes/kanban/boards/` when supported. It includes board selection,
-  board creation and archive, task creation, search, filters, assignment,
-  dependency links, editable task metadata, triage-to-todo specify flows,
-  per-task retry limits, comments, block, unblock, complete, archive, delete,
-  run and event history, worker log tailing, and dispatcher nudging when the
-  host supports it.
+  Opens the upstream Hermes Kanban workspace from the host. Board management,
+  task editing, triage flows, comments, dependencies, run history, and recovery
+  actions appear when the host supports them.
+- `Files`
+  Edits canonical Hermes files and selected remote text files with conflict
+  checks before save.
+- `Cron Jobs`
+  Browses and manages the real Hermes scheduler state on the host, including
+  create, edit, pause, resume, run-now, and delete actions.
 - `Usage`
-  Shows aggregate input and output token totals, top sessions, top models,
-  recent session trends, and when available, a host-wide profile breakdown.
+  Shows token totals, top sessions, top models, recent trends, and profile
+  breakdowns when available.
 - `Skills`
-  Discovers and reads remote `SKILL.md` files from the local Hermes skills
-  store plus configured `skills.external_dirs`, while keeping skill creation
-  and editing anchored to `~/.hermes/skills/`, with quick filtering across
-  names, categories, tags, related skills, and platform metadata, companion
-  folder awareness, optional folder scaffolding, and remote conflict checks
-  before save.
+  Discovers remote `SKILL.md` files, reads skill metadata, and lets you create
+  or edit skills anchored to the Hermes skills store.
 - `Terminal`
-  Opens the real SSH shell inside the app, with multiple tabs, named theme
-  presets, live background and text color tuning, and room for a genuinely
-  multi-profile, multi-agent workflow that still stays close to the host.
+  Opens a real SSH shell inside the app, with tabs, theme presets, color
+  controls, and enough room for multi-profile, multi-agent work.
 
-## Why It Feels Different
+## Choosing A Chat Surface
 
-Most visual agent tools become one of three things: a browser dashboard, a
-cloud execution surface, or a terminal session relay. Those are useful shapes,
-but they usually add something else to manage: a local web server, a gateway,
-a container, a cloud workspace, or a second place where state can appear to
-live.
+Hermes Desktop does not replace the terminal surfaces Hermes already gives you.
+It lets you choose the right one for the job.
 
-Hermes Desktop makes a narrower bet.
+- Use in-app chat in `Sessions` for quick turns, context checks, and continuing
+  a session while you are already in the app.
+- Use the embedded `Terminal` for heavier work where you want shell control,
+  command approvals, long-running output, or manual review close at hand.
+- Use `hermes --tui` in the terminal when you want Hermes Agent's richer TUI for
+  longer interactive sessions.
 
-It is a native macOS app that talks to your Hermes host over SSH and keeps the
-host authoritative. Sessions come from the remote session store. Kanban comes
-from the upstream host-wide Kanban home, starting with the default
-`~/.hermes/kanban.db` board. Cron jobs come from the remote scheduler state.
-Files and skills are edited on the host with conflict checks.
+All of these paths still run Hermes on the selected host. The choice is about
+surface area, not about creating a second source of truth.
 
-The app feels calmer because it does not blur where the work is happening. It
-just gives the real Hermes workflow a Mac surface that is easier to live in.
+## Trust Model
 
-## Why SSH And A Real Terminal
+If you are evaluating whether to trust Hermes Desktop, start here:
 
-Hermes is strongest at the command line.
+- read [SECURITY.md](SECURITY.md) for the current security model: what runs
+  locally, what runs remotely over SSH, what the app stores, and which network
+  calls it makes
+- read [docs/distribution.md](docs/distribution.md) for the release model,
+  including the limits of ad-hoc signing and what published checksums can and
+  cannot prove
+- build the app from source with `./scripts/build-macos-app.sh` if you prefer
+  the clearest trust path available in this repo today
 
-Hermes Desktop respects that. It keeps the real path visible and usable: real
-SSH, real terminal, real remote files, real session data, real Kanban state,
-real cron state.
+Current public releases include a SHA-256 checksum and a small JSON manifest
+for `HermesDesktop.app.zip`.
 
-It does not try to hide Hermes behind a separate gateway layer, invent a second
-source of truth, or turn the workflow into something softer and less reliable.
-The goal is not to abstract Hermes away. The goal is to give it a native Mac
-surface that still feels honest.
+After downloading:
 
-That honesty is precisely what makes the app reassuring. You do not need to
-guess where your data lives, which machine is authoritative, or whether the app
-invented its own shadow world to feel convenient. Hermes Desktop stays close to
-the host because that is the more trustworthy design.
+```bash
+shasum -a 256 HermesDesktop.app.zip
+```
 
-## FAQ
+After installing:
 
-### Is it safe to install?
+```bash
+codesign --verify --deep --strict /Applications/HermesDesktop.app
+```
 
-That is the right question, and you should not rely on reassurance alone.
+To verify a release zip against the published manifest from a repo checkout:
 
-Here are concrete things you can verify yourself:
+```bash
+./scripts/verify-release.sh \
+  /path/to/HermesDesktop.app.zip \
+  /path/to/HermesDesktop.app.zip.manifest.json
+```
 
-- the app is open source in this repo, and you can build it locally with
-  `./scripts/build-macos-app.sh` instead of using the release zip
-- GitHub Releases include a SHA-256 checksum for the release zip
-- Hermes Desktop uses direct SSH to the host you choose and does not require a
-  gateway API or helper service
-- the built-in update check calls GitHub Releases for the latest Hermes Desktop
-  app version only; it does not update Hermes Agent and does not send your host,
-  profile, file, session, or Kanban content
-- you can inspect its live network behavior with Little Snitch, LuLu, or
-  `nettop`
+Checksums are a useful integrity check, not a trust model. They tell you
+whether your download matches the published release asset. They do not replace
+source review, local builds, or understanding the current distribution model.
 
-For the current trust model in one place, read [SECURITY.md](SECURITY.md) and
-[docs/distribution.md](docs/distribution.md).
-
-One distribution detail to understand: the public build is ad-hoc signed and
-not notarized by Apple. That is why macOS may show a first-launch warning. It is
-different from Apple actively reporting that it found malware in the app.
-
-### Why use Hermes Desktop if the official web dashboard exists?
-
-Because the dashboard is for managing Hermes from a browser, while Hermes
-Desktop is for working on the Hermes host from your Mac.
-
-Use the dashboard for installation-level tasks: configuration, API keys, logs,
-and browser-based monitoring. Use Hermes Desktop when you are in the daily loop:
-reading sessions, editing remote files or skills, checking Kanban, reviewing
-usage, managing cron jobs, and keeping a real SSH terminal close.
-
-The dashboard gives Hermes a web control surface. Hermes Desktop gives the same
-host a native macOS workbench without changing the SSH-first model.
-
-### Does Hermes Desktop replace a remote file manager or IDE?
-
-No.
-
-It lets you browse remote directories and bookmark selected text files next to
-the canonical Hermes files. It is still a focused Hermes workspace, not a full
-SFTP client or remote IDE. Remote text files up to 10 MB are editable.
-
-### Where does state live?
-
-On the Hermes host.
-
-Sessions are read from `~/.hermes/state.db` first, with
-`~/.hermes/sessions/*.jsonl` as a fallback only when the SQLite store is not
-available. Kanban reads and writes the upstream host-wide Kanban home: the
-default board is `~/.hermes/kanban.db`, and additional boards use
-`~/.hermes/kanban/boards/<slug>/kanban.db` when available. Cron jobs use the
-remote scheduler state. Files and skills are saved back to the host.
-
-Some app state still exists locally on your Mac. The current local state is
-documented in [SECURITY.md](SECURITY.md).
-
-### What does in-app chat do?
-
-It runs Hermes on the selected host over SSH.
-
-Starting a new chat uses the remote `hermes chat` path. Continuing a session
-uses `hermes --resume <session-id> chat`, with the selected Hermes profile
-preserved when one is active. If Hermes requests command approval during a
-non-interactive chat turn, Hermes Desktop cannot collect a manual approval
-inside the chat. When Hermes can handle the denial and continue, the transcript
-shows Hermes' normal response. If the turn cannot continue usefully, the app
-shows an approval-needed message and lets you retry with auto-approve enabled
-or resume the session in Terminal to review the command yourself.
-
-### Why do I still need SSH working in Terminal first?
-
-Because the app uses the same SSH path your Mac already uses, but in a
-non-interactive way.
-
-If Terminal still needs password entry, host key confirmation, or other
-interactive fixes for that target, the app will usually hit the same wall.
-
-Your Mac does not need to be on the same Wi-Fi. It only needs a normal SSH route
-to the host: LAN, public IP, DNS, VPN, or Tailscale.
-
-### What happens if a remote file changed after I opened it?
-
-Hermes Desktop will not blindly overwrite it.
-
-Before saving an edited workspace file or skill, the app checks whether the
-remote file still matches the version you opened. If it changed, save is blocked
-and your local edits stay intact until you reload intentionally.
-
-## Roadmap
-
-Most of the original roadmap is now shipped.
-
-This app has reached the point we wanted: a calm, capable native macOS
-workspace for the real Hermes workflow, still anchored to SSH and the host as
-source of truth.
-
-### Shipped
-
-- [x] a Files workspace for canonical Hermes files and user-bookmarked remote
-  text files, with SSH-backed browsing, conflict-aware editing, and atomic saves
-- [x] native session workflows with cleaner metadata, full-text session and
-  message-content search, match snippets, deletion, and refresh-on-entry
-  behavior
-- [x] a session workbench with pinned sessions, readable transcripts, compact
-  tool-output summaries, in-app chat continuation, safer non-interactive
-  approval handling, preserved transcript position across section switches,
-  and terminal resume
-- [x] a native Kanban workspace for upstream Hermes boards, including board
-  selection, board creation and archive, task creation, status actions,
-  assignment, dependency links, editable task metadata, comments, run/event
-  history, recovery actions, worker log visibility, and dispatcher nudging
-- [x] a usage dashboard with aggregate token totals, top sessions, top models,
-  trends, and host-wide multi-profile totals when available
-- [x] native skill workflows for discovering, inspecting, creating, and editing
-  remote `SKILL.md` files from the Hermes skills store, with support for
-  configured external discovery directories and local write precedence
-- [x] profile-aware host workflows aligned with Hermes Agent profiles on the
-  same SSH target
-- [x] native cron job workflows for the canonical remote scheduler state,
-  including agent jobs and script-only host jobs
-- [x] a real embedded SSH terminal with tabs, named theme presets, live color
-  controls, and coherent multi-profile workspace behavior
-- [x] English, Simplified Chinese, and Russian localization resources packaged
-  in the app bundle
-- [x] universal macOS release packaging for Apple Silicon and Intel, with
-  bundle version stamping in the packaging flow
-
-### From Here
-
-- keep polishing onboarding, diagnostics, Files ergonomics, terminal UX, and
-  multi-host details without adding a second transport model or shadow state
-- keep tracking upstream Hermes Agent changes, especially around Kanban and
-  session chat, so the app stays close to the real host workflow
-- keep the trust story and release documentation aligned with the code and the
-  actual distribution model used by the repo at the time of release
-
-Anything larger than that should be justified by Hermes itself, not added here
-for novelty.
-
-## Build From Source
+## Build Locally
 
 For cautious users, building from source is the clearest trust path available
 in this repo today. For local development, it is also the supported path for
@@ -555,10 +328,11 @@ producing the app bundle directly:
 ./scripts/build-macos-app.sh
 ```
 
-Then open `dist/HermesDesktop.app`.
+Then open:
 
-That build path creates the same kind of ad-hoc signed bundle used by the
-release packaging flow. Details: [docs/distribution.md](docs/distribution.md).
+```bash
+dist/HermesDesktop.app
+```
 
 To run the release-support test suite:
 
@@ -575,19 +349,96 @@ To create the GitHub Releases archive:
 For release-candidate packaging, you can stamp an explicit version:
 
 ```bash
-HERMES_VERSION=0.7.2 ./scripts/package-github-release.sh
+HERMES_VERSION=1.2.3 ./scripts/package-github-release.sh
 ```
 
 Release artifacts:
 
-- `dist/HermesDesktop.app.zip` as a universal macOS archive for Apple Silicon
-  and Intel Macs
-- `dist/HermesDesktop.app.zip.sha256` for checksum verification
-- `dist/HermesDesktop.app.zip.manifest.json` for machine-readable release
-  metadata
+- `dist/HermesDesktop.app.zip`
+- `dist/HermesDesktop.app.zip.sha256`
+- `dist/HermesDesktop.app.zip.manifest.json`
 
-To verify the locally packaged release artifact:
+## FAQ
 
-```bash
-./scripts/verify-release.sh
-```
+### Is it safe to install?
+
+That is the right question, and you should not rely on reassurance alone.
+
+Hermes Desktop is open source, uses direct SSH to the host you choose, does not
+require a gateway API or helper service, and stores only a small amount of local
+app state on your Mac. The built-in update check calls GitHub Releases for the
+latest Hermes Desktop app version only; it does not update Hermes Agent and
+does not send your host, profile, file, session, or Kanban content.
+
+The current public build is ad-hoc signed and not notarized by Apple, so
+macOS may show a first-launch warning. Cautious users should read
+[SECURITY.md](SECURITY.md), read [docs/distribution.md](docs/distribution.md),
+and consider building from source.
+
+### Where does state live?
+
+On the Hermes host.
+
+Sessions, Kanban, cron jobs, files, skills, and usage are read from the selected
+host and profile. Hermes Desktop does not maintain a local mirror of Hermes
+state.
+
+Some local app preferences and connection details are stored under
+`~/Library/Application Support/HermesDesktop`. The current local state is
+documented in [SECURITY.md](SECURITY.md).
+
+### Why do I still need SSH working in Terminal first?
+
+Because the app uses the same SSH path your Mac already uses, but in a
+non-interactive way.
+
+If Terminal still needs password entry, host key confirmation, or other
+interactive setup for that target, the app will usually hit the same wall.
+
+### What does in-app chat do?
+
+It runs Hermes on the selected host over SSH.
+
+Starting a new chat uses the remote `hermes chat` path. Continuing a session
+uses the remote resume path with the selected Hermes profile preserved when one
+is active.
+
+If Hermes requests command approval during a non-interactive chat turn, Hermes
+Desktop cannot collect a manual approval inside that chat surface. When you
+need to review or approve commands yourself, resume the session in Terminal.
+
+### Does Hermes Desktop replace a remote file manager or IDE?
+
+No.
+
+It lets you browse remote directories and bookmark selected text files next to
+the canonical Hermes files. It is still a focused Hermes workspace, not a full
+SFTP client or remote IDE. Remote text files up to 10 MB are editable.
+
+### What happens if a remote file changed after I opened it?
+
+Hermes Desktop will not blindly overwrite it.
+
+Before saving an edited workspace file or skill, the app checks whether the
+remote file still matches the version you opened. If it changed, save is
+blocked and your local edits stay intact until you reload intentionally.
+
+## Where It Goes Next
+
+Most of the original roadmap is now shipped.
+
+Hermes Desktop has reached the shape it was aiming for: a calm, capable native
+macOS workspace for the real Hermes workflow, still anchored to SSH and the
+host as source of truth.
+
+From here, the work is not about adding novelty for its own sake. It is about:
+
+- polishing onboarding, diagnostics, Files ergonomics, terminal UX, and
+  multi-host details
+- tracking upstream Hermes Agent changes so the app stays close to the real
+  host workflow
+- keeping the trust story and release documentation aligned with the code and
+  actual distribution model
+
+Anything larger than that should be justified by Hermes itself, not added just
+because it is technically possible.
