@@ -55,7 +55,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .sessions:
             "clock.arrow.circlepath"
         case .workflows:
-            "square.stack.3d.up"
+            "bookmark.square"
         case .cronjobs:
             "calendar.badge.clock"
         case .kanban:

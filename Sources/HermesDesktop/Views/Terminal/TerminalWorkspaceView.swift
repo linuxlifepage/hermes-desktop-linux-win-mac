@@ -69,8 +69,10 @@ struct TerminalWorkspaceView: View {
                     systemImage: "terminal",
                     description: Text(L10n.string("Create a tab to start a real SSH shell for the active host."))
                 )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .task(id: context.activeConnection?.id) {
             if context.isTerminalSectionActive {
                 ensureTerminalSession()
