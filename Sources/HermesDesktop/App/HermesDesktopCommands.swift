@@ -65,11 +65,11 @@ struct HermesDesktopCommands: Commands {
         }
 
         CommandMenu(L10n.string("Navigate")) {
-            ForEach(Array(AppSection.allCases.enumerated()), id: \.element.id) { index, section in
+            ForEach(AppSection.allCases) { section in
                 Button(L10n.string("Show %@", section.title)) {
                     appState.requestSectionSelection(section)
                 }
-                .keyboardShortcut(KeyEquivalent(Character("\(index + 1)")), modifiers: [.command])
+                .keyboardShortcut(section.navigationShortcutKey, modifiers: [.command])
                 .disabled(!appState.isSectionAvailable(section))
             }
         }

@@ -35,6 +35,11 @@ final class ConnectionStore: ObservableObject {
             persistPreferencesIfNeeded()
         }
     }
+    @Published private(set) var workflows: [WorkflowPreset] = [] {
+        didSet {
+            persistPreferencesIfNeeded()
+        }
+    }
 
     private let paths: AppPaths
     private let encoder = JSONEncoder()
@@ -159,6 +164,35 @@ final class ConnectionStore: ObservableObject {
         }
     }
 
+    func workflows(for workspaceScopeFingerprint: String) -> [WorkflowPreset] {
+        workflows
+            .filter { $0.workspaceScopeFingerprint == workspaceScopeFingerprint }
+            .sorted { lhs, rhs in
+                let nameComparison = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+                if nameComparison != .orderedSame {
+                    return nameComparison == .orderedAscending
+                }
+
+                if lhs.updatedAt != rhs.updatedAt {
+                    return lhs.updatedAt > rhs.updatedAt
+                }
+
+                return lhs.id.uuidString < rhs.id.uuidString
+            }
+    }
+
+    func upsertWorkflow(_ workflow: WorkflowPreset) {
+        if let index = workflows.firstIndex(where: { $0.id == workflow.id }) {
+            workflows[index] = workflow
+        } else {
+            workflows.append(workflow)
+        }
+    }
+
+    func removeWorkflow(id: UUID) {
+        workflows.removeAll { $0.id == id }
+    }
+
     private func load() {
         isHydratingFromDisk = true
         defer { isHydratingFromDisk = false }
@@ -187,7 +221,8 @@ final class ConnectionStore: ObservableObject {
             automaticallyChecksForUpdates: automaticallyChecksForUpdates,
             lastAutomaticUpdateCheckAt: lastAutomaticUpdateCheckAt,
             workspaceFileBookmarks: workspaceFileBookmarks,
-            pinnedSessions: pinnedSessions
+            pinnedSessions: pinnedSessions,
+            workflows: workflows
         )
 
         do {
@@ -246,7 +281,8 @@ final class ConnectionStore: ObservableObject {
                 automaticallyChecksForUpdates: true,
                 lastAutomaticUpdateCheckAt: nil,
                 workspaceFileBookmarks: [],
-                pinnedSessions: []
+                pinnedSessions: [],
+                workflows: []
             )
         )
     }
@@ -258,6 +294,7 @@ final class ConnectionStore: ObservableObject {
         lastAutomaticUpdateCheckAt = preferences.lastAutomaticUpdateCheckAt
         workspaceFileBookmarks = preferences.workspaceFileBookmarks ?? []
         pinnedSessions = preferences.pinnedSessions ?? []
+        workflows = preferences.workflows ?? []
     }
 
     private func reportPersistenceError(_ message: String) {
@@ -276,6 +313,7 @@ private struct AppPreferences: Codable {
     var lastAutomaticUpdateCheckAt: Date?
     var workspaceFileBookmarks: [WorkspaceFileBookmark]?
     var pinnedSessions: [PinnedSession]?
+    var workflows: [WorkflowPreset]?
 }
 
 private extension String {

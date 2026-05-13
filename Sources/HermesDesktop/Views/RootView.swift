@@ -19,6 +19,10 @@ struct RootView: View {
         minPrimaryWidth: workbenchPrimaryColumnWidth,
         defaultPrimaryWidth: workbenchPrimaryColumnWidth
     )
+    @State private var workflowsSplitLayout = HermesSplitLayout(
+        minPrimaryWidth: workbenchPrimaryColumnWidth,
+        defaultPrimaryWidth: workbenchPrimaryColumnWidth
+    )
     @State private var kanbanSplitLayout = HermesSplitLayout(
         minPrimaryWidth: workbenchPrimaryColumnWidth,
         defaultPrimaryWidth: workbenchPrimaryColumnWidth
@@ -191,6 +195,8 @@ struct RootView: View {
             return $sessionsSplitLayout
         case .cronjobs:
             return $cronJobsSplitLayout
+        case .workflows:
+            return $workflowsSplitLayout
         case .kanban:
             return $kanbanSplitLayout
         case .files:
@@ -220,7 +226,7 @@ struct RootView: View {
         if appState.activeConnection == nil {
             return [.connections]
         }
-        return [.connections, .overview, .sessions, .cronjobs, .kanban, .files, .usage, .skills, .terminal]
+        return [.connections, .overview, .sessions, .workflows, .cronjobs, .kanban, .files, .usage, .skills, .terminal]
     }
 
     private var sectionSelection: Binding<AppSection?> {
@@ -270,6 +276,8 @@ struct RootView: View {
             FilesView(splitLayout: $filesSplitLayout)
         case .sessions:
             EmptyView()
+        case .workflows:
+            WorkflowsView(splitLayout: $workflowsSplitLayout)
         case .cronjobs:
             CronJobsView(splitLayout: $cronJobsSplitLayout)
         case .kanban:

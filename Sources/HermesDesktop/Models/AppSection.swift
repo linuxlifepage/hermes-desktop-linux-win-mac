@@ -1,10 +1,12 @@
 import Foundation
+import SwiftUI
 
 enum AppSection: String, CaseIterable, Identifiable {
     case connections
     case overview
     case files
     case sessions
+    case workflows
     case cronjobs
     case kanban
     case usage
@@ -27,6 +29,8 @@ enum AppSection: String, CaseIterable, Identifiable {
             "Files"
         case .sessions:
             "Sessions"
+        case .workflows:
+            "Workflows"
         case .cronjobs:
             "Cron Jobs"
         case .kanban:
@@ -50,6 +54,8 @@ enum AppSection: String, CaseIterable, Identifiable {
             "doc.text"
         case .sessions:
             "clock.arrow.circlepath"
+        case .workflows:
+            "square.stack.3d.up"
         case .cronjobs:
             "calendar.badge.clock"
         case .kanban:
@@ -60,6 +66,31 @@ enum AppSection: String, CaseIterable, Identifiable {
             "book.closed"
         case .terminal:
             "terminal"
+        }
+    }
+
+    var navigationShortcutKey: KeyEquivalent {
+        switch self {
+        case .connections:
+            return "1"
+        case .overview:
+            return "2"
+        case .sessions:
+            return "3"
+        case .workflows:
+            return "4"
+        case .cronjobs:
+            return "5"
+        case .kanban:
+            return "6"
+        case .files:
+            return "7"
+        case .usage:
+            return "8"
+        case .skills:
+            return "9"
+        case .terminal:
+            return "0"
         }
     }
 }

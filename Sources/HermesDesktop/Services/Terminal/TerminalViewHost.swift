@@ -7,6 +7,7 @@ final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
     private let hostView = TerminalHostView()
     private var startedLaunchToken: UUID?
     private var scheduledLaunchToken: UUID?
+    private var initialInputTask: Task<Void, Never>?
     private var appliedAppearance: TerminalThemeAppearance?
     private var onProcessStart: (() -> Void)?
     private var onTitleChange: ((String) -> Void)?
@@ -85,6 +86,8 @@ final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
         scheduledLaunchToken = nil
         guard startedLaunchToken != request.launchToken else { return }
         startedLaunchToken = request.launchToken
+        initialInputTask?.cancel()
+        initialInputTask = nil
 
         let environment = [
             "TERM=xterm-256color",
@@ -98,6 +101,7 @@ final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
             execName: "ssh"
         )
         onProcessStart?()
+        deliverInitialInputIfNeeded(for: request)
     }
 
     private func applyAppearance(_ appearance: TerminalThemeAppearance) {
@@ -120,13 +124,44 @@ final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
     private func terminateOnMainThread() {
         scheduledLaunchToken = nil
         startedLaunchToken = nil
+        initialInputTask?.cancel()
+        initialInputTask = nil
         hostView.terminalView.terminate()
+    }
+
+    private func deliverInitialInputIfNeeded(for request: TerminalLaunchRequest) {
+        guard let initialInput = request.initialInput,
+              !initialInput.isEmpty else { return }
+
+        initialInputTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            let deadline = Date().addingTimeInterval(8)
+            while self.startedLaunchToken == request.launchToken,
+                  self.hostView.terminalView.process.running,
+                  Date() < deadline,
+                  !Task.isCancelled {
+                if self.hostView.terminalView.terminal.bracketedPasteMode {
+                    self.hostView.submitBracketedPaste(initialInput)
+                    return
+                }
+
+                try? await Task.sleep(for: .milliseconds(120))
+            }
+
+            guard self.startedLaunchToken == request.launchToken,
+                  self.hostView.terminalView.process.running,
+                  !Task.isCancelled else { return }
+
+            self.hostView.submit(initialInput)
+        }
     }
 }
 
 struct TerminalLaunchRequest {
     let sshArguments: [String]
     let launchToken: UUID
+    let initialInput: String?
 }
 
 final class TerminalMountContainerView: NSView {
@@ -221,6 +256,26 @@ final class TerminalHostView: NSView {
         terminalView.installColors(appearance.ansiPalette.map(Self.makeTerminalColor(from:)))
     }
 
+    func send(_ text: String) {
+        send(bytes: Array(text.utf8))
+    }
+
+    func send(bytes: [UInt8]) {
+        terminalView.process.send(data: bytes[...])
+    }
+
+    func sendReturn() {
+        send("\r")
+    }
+
+    func submit(_ text: String) {
+        send(bytes: TerminalInputSequence.standardSubmission(for: text))
+    }
+
+    func submitBracketedPaste(_ text: String) {
+        send(bytes: TerminalInputSequence.bracketedPasteSubmission(for: text))
+    }
+
     private static func makeTerminalColor(from themeColor: TerminalThemeColor) -> SwiftTerm.Color {
         let color = themeColor.nsColor.usingColorSpace(.deviceRGB) ?? .black
         return SwiftTerm.Color(
@@ -228,5 +283,20 @@ final class TerminalHostView: NSView {
             green: UInt16(color.greenComponent * 65535),
             blue: UInt16(color.blueComponent * 65535)
         )
+    }
+}
+
+enum TerminalInputSequence {
+    private static let carriageReturn = UInt8(ascii: "\r")
+
+    static func standardSubmission(for text: String) -> [UInt8] {
+        Array(text.utf8) + [carriageReturn]
+    }
+
+    static func bracketedPasteSubmission(for text: String) -> [UInt8] {
+        EscapeSequences.bracketedPasteStart +
+            Array(text.utf8) +
+            EscapeSequences.bracketedPasteEnd +
+            [carriageReturn]
     }
 }

@@ -136,7 +136,7 @@ struct ConnectionProfileTests {
 
         #expect(
             profile.remoteShellBootstrapCommand(startupCommandLine: "hermes --profile researcher --resume 'debug session'\\''s final turn'") ==
-                #"exec /bin/sh -c "export HERMES_HOME=\"\$HOME/.hermes/profiles/researcher\"; exec \"\${SHELL:-/bin/zsh}\" -lc \"hermes --profile researcher --resume 'debug session'\\\\''s final turn'\"""#
+                #"exec /bin/sh -c "export HERMES_HOME=\"\$HOME/.hermes/profiles/researcher\"; exec \"\${SHELL:-/bin/zsh}\" -lc \"hermes --profile researcher --resume 'debug session'\\\\''s final turn'; status=\\\$?; if [ \\\"\\\$status\\\" -ne 0 ]; then printf '\\\\n[Hermes Desktop] Startup command exited with status %s.\\\\n' \\\"\\\$status\\\"; fi; exec \\\"\\\${SHELL:-/bin/zsh}\\\" -l\"""#
         )
     }
 
@@ -149,7 +149,7 @@ struct ConnectionProfileTests {
 
         #expect(
             profile.remoteShellBootstrapCommand(startupCommandLine: "printf \"$HOME `whoami`\"") ==
-                #"exec /bin/sh -c "export HERMES_HOME=\"\$HOME/.hermes\"; exec \"\${SHELL:-/bin/zsh}\" -lc \"printf \\\"\\\$HOME \\\`whoami\\\`\\\"\"""#
+                #"exec /bin/sh -c "export HERMES_HOME=\"\$HOME/.hermes\"; exec \"\${SHELL:-/bin/zsh}\" -lc \"printf \\\"\\\$HOME \\\`whoami\\\`\\\"; status=\\\$?; if [ \\\"\\\$status\\\" -ne 0 ]; then printf '\\\\n[Hermes Desktop] Startup command exited with status %s.\\\\n' \\\"\\\$status\\\"; fi; exec \\\"\\\${SHELL:-/bin/zsh}\\\" -l\"""#
         )
     }
 

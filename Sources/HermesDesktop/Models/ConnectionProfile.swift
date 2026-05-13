@@ -101,25 +101,29 @@ struct ConnectionProfile: Codable, Identifiable, Equatable, Hashable {
         return copy.updated()
     }
 
+    var remoteHermesHomeShellExpression: String {
+        if let trimmedHermesProfile {
+            let escapedProfile = trimmedHermesProfile.escapedForDoubleQuotedShellArgument
+            return "$HOME/.hermes/profiles/\(escapedProfile)"
+        }
+
+        return "$HOME/.hermes"
+    }
+
     var remoteShellBootstrapCommand: String {
         remoteShellBootstrapCommand()
     }
 
     func remoteShellBootstrapCommand(startupCommandLine: String? = nil) -> String {
-        let shellHomeExpression: String
-        if let trimmedHermesProfile {
-            let escapedProfile = trimmedHermesProfile.escapedForDoubleQuotedShellArgument
-            shellHomeExpression = "$HOME/.hermes/profiles/\(escapedProfile)"
-        } else {
-            shellHomeExpression = "$HOME/.hermes"
-        }
-
-        let exportCommand = "export HERMES_HOME=\"\(shellHomeExpression)\""
+        let exportCommand = "export HERMES_HOME=\"\(remoteHermesHomeShellExpression)\""
 
         let innerCommand: String
         if let startupCommandLine,
            !startupCommandLine.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            let escapedStartupCommand = startupCommandLine.escapedForDoubleQuotedShellArgument
+            let startupSequence = """
+\(startupCommandLine); status=$?; if [ "$status" -ne 0 ]; then printf '\\n[Hermes Desktop] Startup command exited with status %s.\\n' "$status"; fi; exec "${SHELL:-/bin/zsh}" -l
+"""
+            let escapedStartupCommand = startupSequence.escapedForDoubleQuotedShellArgument
             innerCommand = "\(exportCommand); exec \"${SHELL:-/bin/zsh}\" -lc \"\(escapedStartupCommand)\""
         } else {
             innerCommand = "\(exportCommand); exec \"${SHELL:-/bin/zsh}\" -l"

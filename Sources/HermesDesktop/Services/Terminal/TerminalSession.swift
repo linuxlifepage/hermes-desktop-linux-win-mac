@@ -4,6 +4,7 @@ import Foundation
 final class TerminalSession: ObservableObject, @unchecked Sendable {
     let connection: ConnectionProfile
     let sshArguments: [String]
+    let startupInput: String?
     private let viewHost = TerminalViewHost()
 
     @Published var terminalTitle: String
@@ -13,8 +14,14 @@ final class TerminalSession: ObservableObject, @unchecked Sendable {
     @Published private(set) var launchToken = UUID()
     @Published private(set) var isRunning = false
 
-    init(connection: ConnectionProfile, sshTransport: SSHTransport, startupCommandLine: String? = nil) {
+    init(
+        connection: ConnectionProfile,
+        sshTransport: SSHTransport,
+        startupCommandLine: String? = nil,
+        startupInput: String? = nil
+    ) {
         self.connection = connection
+        self.startupInput = startupInput
         self.sshArguments = sshTransport.shellArguments(
             for: connection,
             startupCommandLine: startupCommandLine
@@ -67,7 +74,8 @@ final class TerminalSession: ObservableObject, @unchecked Sendable {
             in: container,
             request: TerminalLaunchRequest(
                 sshArguments: sshArguments,
-                launchToken: launchToken
+                launchToken: launchToken,
+                initialInput: startupInput
             ),
             appearance: appearance,
             isActive: isActive

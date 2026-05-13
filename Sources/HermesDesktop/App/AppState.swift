@@ -33,6 +33,8 @@ final class AppState: ObservableObject {
     @Published var totalSessionsCount = 0
     @Published private(set) var sessionSearchQuery = ""
     @Published private(set) var sessionPinStateVersion = 0
+    @Published var selectedWorkflowID: UUID?
+    @Published var workflows: [WorkflowPreset] = []
     @Published var usageSummary: UsageSummary?
     @Published var usageProfileBreakdown: UsageProfileBreakdown?
     @Published var usageError: String?
@@ -232,6 +234,8 @@ final class AppState: ObservableObject {
             return !isRefreshingOverview && !isBusy
         case .sessions:
             return !isLoadingSessions && !isRefreshingSessions
+        case .workflows:
+            return !isLoadingSkills && !isRefreshingSkills
         case .cronjobs:
             return !isLoadingCronJobs && !isRefreshingCronJobs
         case .kanban:
@@ -255,7 +259,7 @@ final class AppState: ObservableObject {
         guard activeConnection != nil else { return false }
 
         switch selectedSection {
-        case .sessions, .cronjobs, .kanban, .skills:
+        case .sessions, .workflows, .cronjobs, .kanban, .skills:
             return true
         case .connections, .overview, .files, .usage, .terminal:
             return false
@@ -332,6 +336,8 @@ final class AppState: ObservableObject {
             await refreshOverview(manual: true)
         case .sessions:
             await refreshSessions(query: sessionSearchQuery)
+        case .workflows:
+            await refreshWorkflows()
         case .cronjobs:
             await refreshCronJobs()
         case .kanban:
@@ -579,6 +585,12 @@ final class AppState: ObservableObject {
         isRefreshingSkills = true
         await loadSkills(reset: true)
         isRefreshingSkills = false
+    }
+
+    func refreshWorkflows() async {
+        loadWorkflows(reset: true)
+        await loadSkills(reset: false)
+        loadWorkflows(reset: true)
     }
 
     func refreshCronJobs() async {
@@ -1171,7 +1183,14 @@ final class AppState: ObservableObject {
         do {
             let items = try await skillBrowserService.listSkills(connection: profile)
             guard isActiveWorkspace(profile) else { return }
-            skills = items
+            skills = items.sorted { lhs, rhs in
+                let comparison = lhs.slug.localizedCaseInsensitiveCompare(rhs.slug)
+                if comparison != .orderedSame {
+                    return comparison == .orderedAscending
+                }
+
+                return lhs.relativePath.localizedCaseInsensitiveCompare(rhs.relativePath) == .orderedAscending
+            }
             isLoadingSkills = false
 
             if reset {
@@ -1199,6 +1218,136 @@ final class AppState: ObservableObject {
             skillsError = error.localizedDescription
             setStatusMessage(L10n.string("Unable to load skills"))
         }
+    }
+
+    func loadWorkflows(reset: Bool = false) {
+        guard let profile = activeConnection else {
+            workflows = []
+            selectedWorkflowID = nil
+            return
+        }
+
+        let previousSelectedWorkflowID = selectedWorkflowID
+        workflows = connectionStore.workflows(for: profile.workspaceScopeFingerprint)
+
+        guard reset else { return }
+
+        if let previousSelectedWorkflowID,
+           workflows.contains(where: { $0.id == previousSelectedWorkflowID }) {
+            selectedWorkflowID = previousSelectedWorkflowID
+        } else {
+            selectedWorkflowID = workflows.first?.id
+        }
+    }
+
+    func createWorkflow(_ draft: WorkflowDraft) -> Bool {
+        guard let profile = activeConnection else { return false }
+
+        if let validationError = draft.validationError {
+            let localizedError = L10n.string(validationError)
+            setStatusMessage(localizedError)
+            activeAlert = AppAlert(
+                title: L10n.string("Unable to save workflow"),
+                message: localizedError
+            )
+            return false
+        }
+
+        let workflow = WorkflowPreset(
+            workspaceScopeFingerprint: profile.workspaceScopeFingerprint,
+            name: draft.normalizedName,
+            prompt: draft.normalizedPrompt,
+            assignedSkills: draft.normalizedSelectedSkills
+        )
+
+        connectionStore.upsertWorkflow(workflow)
+        loadWorkflows(reset: true)
+        selectedWorkflowID = workflow.id
+        setStatusMessage(L10n.string("%@ created", workflow.name))
+        return true
+    }
+
+    func updateWorkflow(_ workflow: WorkflowPreset, draft: WorkflowDraft) -> Bool {
+        if let validationError = draft.validationError {
+            let localizedError = L10n.string(validationError)
+            setStatusMessage(localizedError)
+            activeAlert = AppAlert(
+                title: L10n.string("Unable to save workflow"),
+                message: localizedError
+            )
+            return false
+        }
+
+        let updatedWorkflow = workflow.updated(
+            name: draft.normalizedName,
+            prompt: draft.normalizedPrompt,
+            assignedSkills: draft.normalizedSelectedSkills
+        )
+
+        connectionStore.upsertWorkflow(updatedWorkflow)
+        loadWorkflows(reset: true)
+        selectedWorkflowID = updatedWorkflow.id
+        setStatusMessage(L10n.string("%@ updated", updatedWorkflow.name))
+        return true
+    }
+
+    func deleteWorkflow(_ workflow: WorkflowPreset) {
+        connectionStore.removeWorkflow(id: workflow.id)
+        loadWorkflows(reset: true)
+        setStatusMessage(L10n.string("%@ removed", workflow.name))
+    }
+
+    func workflow(id: UUID?) -> WorkflowPreset? {
+        guard let id else { return nil }
+        return workflows.first(where: { $0.id == id })
+    }
+
+    func runWorkflow(_ workflow: WorkflowPreset) async {
+        guard let profile = activeConnection else {
+            activeAlert = AppAlert(
+                title: L10n.string("No active connection"),
+                message: L10n.string("Select a connection before running a workflow.")
+            )
+            setStatusMessage(L10n.string("No active connection"))
+            return
+        }
+
+        if skills.isEmpty && !isLoadingSkills {
+            await loadSkills(reset: false)
+        }
+
+        let skillsByRelativePath = Dictionary(uniqueKeysWithValues: skills.map { ($0.relativePath, $0) })
+        let missingSkills = workflow.assignedSkills.filter { skillsByRelativePath[$0.relativePath] == nil }
+
+        guard missingSkills.isEmpty else {
+            let message: String
+            if let skillsError,
+               skills.isEmpty {
+                message = skillsError
+            } else {
+                message = L10n.string(
+                    "This workflow references skills that are not available on the active host/profile: %@",
+                    missingSkills.map(\.relativePath).joined(separator: ", ")
+                )
+            }
+
+            activeAlert = AppAlert(
+                title: L10n.string("Workflow cannot run"),
+                message: message
+            )
+            setStatusMessage(L10n.string("Workflow cannot run"))
+            return
+        }
+
+        let invocation = WorkflowLaunchInvocation(workflow: workflow, connection: profile)
+        terminalWorkspace.addCommandTab(
+            for: profile.updated(),
+            commandLine: invocation.commandLine,
+            initialInput: invocation.initialInput
+        )
+        selectedSection = .terminal
+        handleSectionEntry(.terminal)
+        setStatusMessage(L10n.string("Opening %@ in Terminal…", workflow.name))
     }
 
     func loadSkillDetail(summary: SkillSummary) async {
@@ -2106,6 +2255,12 @@ final class AppState: ObservableObject {
             Task { await ensureInitialFileLoads() }
         case .sessions:
             Task { await loadSessions(reset: true) }
+        case .workflows:
+            Task {
+                loadWorkflows(reset: true)
+                await loadSkills(reset: false)
+                loadWorkflows(reset: true)
+            }
         case .cronjobs:
             Task { await loadCronJobs() }
         case .kanban:
@@ -2206,6 +2361,10 @@ final class AppState: ObservableObject {
             await ensureInitialFileLoads()
         case .sessions:
             await loadSessions(reset: true)
+        case .workflows:
+            loadWorkflows(reset: true)
+            await loadSkills(reset: false)
+            loadWorkflows(reset: true)
         case .cronjobs:
             await loadCronJobs()
         case .kanban:
@@ -2435,6 +2594,8 @@ final class AppState: ObservableObject {
             sessionConversationError = nil
             pendingSessionTurn = nil
             stopSessionTranscriptPolling()
+            workflows = []
+            selectedWorkflowID = nil
             usageSummary = nil
             usageProfileBreakdown = nil
             usageError = nil
@@ -2507,6 +2668,8 @@ final class AppState: ObservableObject {
         pendingSessionReloadQuery = nil
         pendingSectionEntryAction = nil
         sessionSearchQuery = ""
+        workflows = []
+        selectedWorkflowID = nil
         usageSummary = nil
         usageProfileBreakdown = nil
         usageError = nil

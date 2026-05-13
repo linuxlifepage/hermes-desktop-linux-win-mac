@@ -13,13 +13,20 @@ final class SkillBrowserService: @unchecked Sendable {
             body: skillListBody
         )
 
-        let response = try await sshTransport.executeJSON(
+        async let discoveredResponse = sshTransport.executeJSON(
             on: connection,
             pythonScript: script,
             responseType: SkillListResponse.self
         )
+        async let launchableRecords = loadLaunchableSkillRecords(connection: connection)
 
-        return response.items
+        let response = try await discoveredResponse
+        let launchableSkillRecords = try await launchableRecords
+
+        return LaunchableSkillInventoryParser.filterDiscoveredSkills(
+            response.items,
+            using: launchableSkillRecords
+        )
     }
 
     func loadSkillDetail(
@@ -736,6 +743,23 @@ final class SkillBrowserService: @unchecked Sendable {
             summary["markdown_content"] = content
             summary["content_hash"] = hashlib.sha256(skill_file.read_bytes()).hexdigest()
             return summary
+        """
+    }
+
+    private func loadLaunchableSkillRecords(connection: ConnectionProfile) async throws -> [LaunchableSkillRecord] {
+        let result = try await sshTransport.execute(
+            on: connection,
+            remoteCommand: launchableSkillRegistryCommand(for: connection),
+            allocateTTY: false
+        )
+
+        try sshTransport.validateSuccessfulExit(result, for: connection)
+        return LaunchableSkillInventoryParser.parse(result.stdout)
+    }
+
+    private func launchableSkillRegistryCommand(for connection: ConnectionProfile) -> String {
+        """
+        export HERMES_HOME="\(connection.remoteHermesHomeShellExpression)"; if [ -x "$HOME/.local/bin/hermes" ]; then HERMES_BIN="$HOME/.local/bin/hermes"; elif command -v hermes >/dev/null 2>&1; then HERMES_BIN="$(command -v hermes)"; else printf 'Hermes CLI not found.\\n' >&2; exit 127; fi; COLUMNS=240 "$HERMES_BIN" skills list --enabled-only
         """
     }
 }
