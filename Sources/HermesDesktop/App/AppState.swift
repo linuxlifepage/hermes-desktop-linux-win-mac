@@ -99,6 +99,7 @@ final class AppState: ObservableObject {
     let kanbanBrowserService: KanbanBrowserService
     let updateCheckService: UpdateCheckService
     let terminalWorkspace: TerminalWorkspaceStore
+    let workflowLaunchDiagnostics: WorkflowLaunchDiagnostics
 
     private let sessionPageSize = 50
     private let approvalNeededMessage = "Hermes requested command approval, but this chat turn cannot collect manual approvals. Retry this turn with Auto-approve enabled, or resume the session in Terminal to review the command yourself."
@@ -119,6 +120,10 @@ final class AppState: ObservableObject {
         let paths = AppPaths()
         let connectionStore = ConnectionStore(paths: paths)
         let sshTransport = SSHTransport(paths: paths)
+        let workflowLaunchLogURL = paths.applicationSupportURL
+            .appendingPathComponent("Diagnostics", isDirectory: true)
+            .appendingPathComponent("workflow-launch-latest.log")
+        let workflowLaunchDiagnostics = WorkflowLaunchDiagnostics(logFileURL: workflowLaunchLogURL)
 
         self.connectionStore = connectionStore
         self.sshTransport = sshTransport
@@ -131,7 +136,11 @@ final class AppState: ObservableObject {
         self.cronBrowserService = CronBrowserService(sshTransport: sshTransport)
         self.kanbanBrowserService = KanbanBrowserService(sshTransport: sshTransport)
         self.updateCheckService = updateCheckService
-        self.terminalWorkspace = TerminalWorkspaceStore(sshTransport: sshTransport)
+        self.workflowLaunchDiagnostics = workflowLaunchDiagnostics
+        self.terminalWorkspace = TerminalWorkspaceStore(
+            sshTransport: sshTransport,
+            workflowLaunchDiagnostics: workflowLaunchDiagnostics
+        )
 
         connectionStore.objectWillChange
             .sink { [weak self] _ in
@@ -1340,10 +1349,17 @@ final class AppState: ObservableObject {
         }
 
         let invocation = WorkflowLaunchInvocation(workflow: workflow, connection: profile)
+        let workflowLaunchDiagnosticsContext = WorkflowLaunchDiagnosticsContext(
+            workflow: workflow,
+            invocation: invocation,
+            connection: profile
+        )
+        await workflowLaunchDiagnostics.recordWorkflowRunRequested(workflowLaunchDiagnosticsContext)
         terminalWorkspace.addCommandTab(
             for: profile.updated(),
             commandLine: invocation.commandLine,
-            initialInput: invocation.initialInput
+            initialInput: invocation.initialInput,
+            workflowLaunchDiagnosticsContext: workflowLaunchDiagnosticsContext
         )
         selectedSection = .terminal
         handleSectionEntry(.terminal)

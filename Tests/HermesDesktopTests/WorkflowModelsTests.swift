@@ -100,4 +100,32 @@ struct WorkflowModelsTests {
                 "Check this GitHub repository: https://github.com/dodo-reach/hermes-desktop inspect and summarize the existing PRs and Issues."
         )
     }
+
+    @Test
+    func launchInvocationPreservesVeryLongPromptWithoutTruncation() {
+        let longSections = (0..<2_000).map { index in
+            "section-\(index) keeps flowing"
+        }
+        let prompt = longSections.joined(separator: "\n")
+        let workflow = WorkflowPreset(
+            workspaceScopeFingerprint: "host|user|22|~/.hermes/profiles/research",
+            name: "Long prompt",
+            prompt: prompt,
+            assignedSkills: [
+                WorkflowSkillReference(relativePath: "github/codebase-inspection", slug: "codebase-inspection", name: "Codebase Inspection")
+            ]
+        )
+        let connection = ConnectionProfile(
+            label: "Research",
+            sshAlias: "hermes-home",
+            hermesProfile: "research"
+        ).updated()
+
+        let invocation = WorkflowLaunchInvocation(workflow: workflow, connection: connection)
+        let expected = longSections.joined(separator: " ")
+
+        #expect(invocation.initialInput == expected)
+        #expect(invocation.initialInput.count == expected.count)
+        #expect(invocation.initialInput.hasSuffix("section-1999 keeps flowing"))
+    }
 }

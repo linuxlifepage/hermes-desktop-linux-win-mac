@@ -10,8 +10,16 @@ struct TerminalWorkspaceStoreTests {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let transport = SSHTransport(paths: makeTestAppPaths(root: root))
-        let store = TerminalWorkspaceStore(sshTransport: transport)
+        let paths = makeTestAppPaths(root: root)
+        let transport = SSHTransport(paths: paths)
+        let store = TerminalWorkspaceStore(
+            sshTransport: transport,
+            workflowLaunchDiagnostics: WorkflowLaunchDiagnostics(
+                logFileURL: paths.applicationSupportURL
+                    .appendingPathComponent("Diagnostics", isDirectory: true)
+                    .appendingPathComponent("workflow-launch-latest.log")
+            )
+        )
         let connection = ConnectionProfile(
             label: "Pi",
             sshAlias: "hermes-pi",

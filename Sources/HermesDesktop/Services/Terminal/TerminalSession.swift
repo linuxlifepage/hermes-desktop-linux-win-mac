@@ -5,6 +5,8 @@ final class TerminalSession: ObservableObject, @unchecked Sendable {
     let connection: ConnectionProfile
     let sshArguments: [String]
     let startupInput: String?
+    let workflowLaunchDiagnosticsContext: WorkflowLaunchDiagnosticsContext?
+    private let workflowLaunchDiagnostics: WorkflowLaunchDiagnostics
     private let viewHost = TerminalViewHost()
 
     @Published var terminalTitle: String
@@ -18,10 +20,14 @@ final class TerminalSession: ObservableObject, @unchecked Sendable {
         connection: ConnectionProfile,
         sshTransport: SSHTransport,
         startupCommandLine: String? = nil,
-        startupInput: String? = nil
+        startupInput: String? = nil,
+        workflowLaunchDiagnostics: WorkflowLaunchDiagnostics,
+        workflowLaunchDiagnosticsContext: WorkflowLaunchDiagnosticsContext? = nil
     ) {
         self.connection = connection
         self.startupInput = startupInput
+        self.workflowLaunchDiagnostics = workflowLaunchDiagnostics
+        self.workflowLaunchDiagnosticsContext = workflowLaunchDiagnosticsContext
         self.sshArguments = sshTransport.shellArguments(
             for: connection,
             startupCommandLine: startupCommandLine
@@ -61,6 +67,14 @@ final class TerminalSession: ObservableObject, @unchecked Sendable {
     func markExited(_ code: Int32?) {
         isRunning = false
         exitCode = code
+        if let workflowLaunchDiagnosticsContext {
+            Task {
+                await workflowLaunchDiagnostics.recordTerminalProcessExited(
+                    workflowLaunchDiagnosticsContext,
+                    exitCode: code
+                )
+            }
+        }
     }
 
     func requestReconnect() {
@@ -75,7 +89,9 @@ final class TerminalSession: ObservableObject, @unchecked Sendable {
             request: TerminalLaunchRequest(
                 sshArguments: sshArguments,
                 launchToken: launchToken,
-                initialInput: startupInput
+                initialInput: startupInput,
+                workflowLaunchDiagnostics: workflowLaunchDiagnostics,
+                workflowLaunchDiagnosticsContext: workflowLaunchDiagnosticsContext
             ),
             appearance: appearance,
             isActive: isActive

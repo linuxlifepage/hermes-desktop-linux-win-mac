@@ -39,4 +39,24 @@ struct TerminalInputSequenceTests {
         #expect(payload.last == UInt8(ascii: "\r"))
         #expect(payload.count == 6)
     }
+
+    @Test
+    func bracketedPasteSubmissionPreservesVeryLongPromptWithoutTruncation() {
+        let prompt = (0..<4_000)
+            .map { "segment-\($0)-abcdefghij" }
+            .joined(separator: " ")
+
+        let payload = TerminalInputSequence.bracketedPasteSubmission(for: prompt)
+        let extracted = String(
+            decoding: payload
+                .dropFirst(bracketedPasteStart.count)
+                .dropLast(bracketedPasteEnd.count + 1),
+            as: UTF8.self
+        )
+
+        #expect(extracted == prompt)
+        #expect(extracted.count == prompt.count)
+        #expect(extracted.hasSuffix("segment-3999-abcdefghij"))
+        #expect(payload.last == UInt8(ascii: "\r"))
+    }
 }

@@ -4,6 +4,7 @@ import Foundation
 
 @MainActor
 final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
+    private static let bracketedPasteReadinessTimeout: TimeInterval = 60
     private let hostView = TerminalHostView()
     private var startedLaunchToken: UUID?
     private var scheduledLaunchToken: UUID?
@@ -101,6 +102,11 @@ final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
             execName: "ssh"
         )
         onProcessStart?()
+        if let workflowLaunchDiagnosticsContext = request.workflowLaunchDiagnosticsContext {
+            Task {
+                await request.workflowLaunchDiagnostics.recordTerminalProcessStarted(workflowLaunchDiagnosticsContext)
+            }
+        }
         deliverInitialInputIfNeeded(for: request)
     }
 
@@ -135,25 +141,84 @@ final class TerminalViewHost: NSObject, LocalProcessTerminalViewDelegate {
 
         initialInputTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            let requiresBracketedPasteReadiness = request.workflowLaunchDiagnosticsContext != nil
 
-            let deadline = Date().addingTimeInterval(8)
+            if let workflowLaunchDiagnosticsContext = request.workflowLaunchDiagnosticsContext {
+                await request.workflowLaunchDiagnostics.recordInitialInputWaitStarted(
+                    workflowLaunchDiagnosticsContext,
+                    deadlineMilliseconds: Int(Self.bracketedPasteReadinessTimeout * 1000)
+                )
+            }
+
+            let deadline = Date().addingTimeInterval(Self.bracketedPasteReadinessTimeout)
             while self.startedLaunchToken == request.launchToken,
                   self.hostView.terminalView.process.running,
                   Date() < deadline,
                   !Task.isCancelled {
                 if self.hostView.terminalView.terminal.bracketedPasteMode {
+                    if let workflowLaunchDiagnosticsContext = request.workflowLaunchDiagnosticsContext {
+                        await request.workflowLaunchDiagnostics.recordBracketedPasteModeObserved(
+                            workflowLaunchDiagnosticsContext,
+                            stage: "pre_send"
+                        )
+                    }
                     self.hostView.submitBracketedPaste(initialInput)
+                    if let workflowLaunchDiagnosticsContext = request.workflowLaunchDiagnosticsContext {
+                        await request.workflowLaunchDiagnostics.recordInitialInputSent(
+                            workflowLaunchDiagnosticsContext,
+                            deliveryMode: .bracketedPaste,
+                            reason: "bracketed_paste_mode_ready",
+                            bracketedPasteModeAtSend: true
+                        )
+                    }
                     return
                 }
 
                 try? await Task.sleep(for: .milliseconds(120))
             }
 
-            guard self.startedLaunchToken == request.launchToken,
-                  self.hostView.terminalView.process.running,
-                  !Task.isCancelled else { return }
+            guard self.startedLaunchToken == request.launchToken else {
+                if let workflowLaunchDiagnosticsContext = request.workflowLaunchDiagnosticsContext {
+                    await request.workflowLaunchDiagnostics.recordInitialInputAborted(
+                        workflowLaunchDiagnosticsContext,
+                        reason: "launch_token_changed"
+                    )
+                }
+                return
+            }
+
+            guard self.hostView.terminalView.process.running else {
+                if let workflowLaunchDiagnosticsContext = request.workflowLaunchDiagnosticsContext {
+                    await request.workflowLaunchDiagnostics.recordInitialInputAborted(
+                        workflowLaunchDiagnosticsContext,
+                        reason: "process_not_running"
+                    )
+                }
+                return
+            }
+
+            guard !Task.isCancelled else {
+                if let workflowLaunchDiagnosticsContext = request.workflowLaunchDiagnosticsContext {
+                    await request.workflowLaunchDiagnostics.recordInitialInputAborted(
+                        workflowLaunchDiagnosticsContext,
+                        reason: "task_cancelled"
+                    )
+                }
+                return
+            }
+
+            if requiresBracketedPasteReadiness {
+                if let workflowLaunchDiagnosticsContext = request.workflowLaunchDiagnosticsContext {
+                    await request.workflowLaunchDiagnostics.recordInitialInputAborted(
+                        workflowLaunchDiagnosticsContext,
+                        reason: "deadline_reached_without_bracketed_paste_mode"
+                    )
+                }
+                return
+            }
 
             self.hostView.submit(initialInput)
+            hostView.submit(initialInput)
         }
     }
 }
@@ -162,6 +227,8 @@ struct TerminalLaunchRequest {
     let sshArguments: [String]
     let launchToken: UUID
     let initialInput: String?
+    let workflowLaunchDiagnostics: WorkflowLaunchDiagnostics
+    let workflowLaunchDiagnosticsContext: WorkflowLaunchDiagnosticsContext?
 }
 
 final class TerminalMountContainerView: NSView {
