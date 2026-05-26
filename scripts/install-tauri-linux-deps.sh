@@ -8,7 +8,7 @@ if ! command -v apt-get >/dev/null 2>&1; then
     exit 1
 fi
 
-sudo apt-get update
+sudo DEBIAN_FRONTEND=noninteractive apt-get update
 
 # Detect which WebKit2GTK dev package is available (4.1 on Ubuntu 22.04+, 4.0 on Ubuntu 20.04)
 if apt-cache show libwebkit2gtk-4.1-dev >/dev/null 2>&1; then
@@ -17,7 +17,7 @@ else
     WEBKIT_PKG="libwebkit2gtk-4.0-dev"
 fi
 
-sudo apt-get install -y \
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
     "$WEBKIT_PKG" \
     libgtk-3-dev \
     libayatana-appindicator3-dev \
