@@ -1,5 +1,4 @@
 .DS_Store
-/AGENTS.md
 /.build
 /.build-tests
 /.cache
@@ -32,3 +31,9 @@ DerivedData/
 *.cer
 *.crt
 .worktrace/
+node_modules/
+TAURI*
+tmp/
+
+# Rust/Tauri
+src-tauri/target/

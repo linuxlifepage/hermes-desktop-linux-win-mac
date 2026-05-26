@@ -1,0 +1,29 @@
+{
+  "name": "hermes-desktop-tauri",
+  "private": true,
+  "version": "0.10.0-tauri.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "test:i18n": "node scripts/check-i18n.mjs",
+    "test:smoke:ssh": "cargo test --manifest-path src-tauri/Cargo.toml real_host_read_only_smoke -- --ignored --nocapture",
+    "test:smoke:ssh:mutations": "cargo test --manifest-path src-tauri/Cargo.toml real_host_mutation_smoke -- --ignored --nocapture",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:build": "tauri build --ci",
+    "tauri:build:linux": "tauri build --ci --bundles deb,rpm",
+    "tauri:build:macos": "tauri build --ci --bundles dmg",
+    "tauri:build:windows": "tauri build --ci --bundles msi,nsis"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.9.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.9.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.4"
+  }
+}

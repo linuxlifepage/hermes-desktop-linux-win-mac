@@ -1,0 +1,23 @@
+[package]
+name = "hermes-desktop-tauri"
+version = "0.10.0-tauri.0"
+description = "Cross-platform Hermes Desktop client built with Tauri"
+authors = ["Hermes Desktop contributors"]
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+name = "hermes_desktop_tauri"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", default-features = false, features = ["wry", "compression", "common-controls-v6", "dynamic-acl", "x11"] }
+thiserror = "2"
+uuid = { version = "1", features = ["serde", "v4"] }
