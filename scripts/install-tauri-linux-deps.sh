@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -euo pipefail
+export DEBIAN_FRONTEND=noninteractive
 
 if ! command -v apt-get >/dev/null 2>&1; then
     echo "error: this helper currently supports Debian/Ubuntu apt-based runners only" >&2
