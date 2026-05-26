@@ -23,14 +23,12 @@ jobs:
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: Linux
-            os: ubuntu-latest
-            container: ubuntu:20.04
+            os: ubuntu-22.04
             artifact-suffix: linux
             build-command: npm run tauri:build:linux
           - name: macOS
@@ -43,25 +41,12 @@ jobs:
             build-command: npm run tauri:build:windows
 
     steps:
-      - name: Install container prerequisites (Linux container only)
-        if: runner.os == 'Linux'
-        run: |
-          apt-get update
-          apt-get install -y sudo git curl tar gzip ca-certificates build-essential
-          git config --global --add safe.directory '*'
-
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Linux Tauri dependencies
         if: runner.os == 'Linux'
         run: bash scripts/install-tauri-linux-deps.sh
-
-      - name: Install Rust (Linux Container only)
-        if: runner.os == 'Linux'
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
-          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Install Rust stable
         run: rustup toolchain install stable --profile minimal --component rustfmt
