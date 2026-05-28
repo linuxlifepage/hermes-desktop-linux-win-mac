@@ -274,7 +274,8 @@ type CronEditorMode = "view" | "create" | "edit";
 type TerminalTabStatus = "starting" | "running" | "exited" | "error";
 type TerminalThemeStyle = "graphite" | "evergreen" | "dusk" | "paper" | "aubergine" | "porcelain" | "custom";
 const designAppThemeOptions = [
-  { id: "blue", label: "Blue", title: "Switch to blue theme" },
+  { id: "blue", label: "DarkBlue", title: "Switch to dark blue theme" },
+  { id: "outline", label: "Outline", title: "Switch to outline theme" },
 ] as const;
 type DesignAppTheme = (typeof designAppThemeOptions)[number]["id"];
 const designAppThemeIds = designAppThemeOptions.map((theme) => theme.id);

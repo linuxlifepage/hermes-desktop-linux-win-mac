@@ -121,6 +121,222 @@
   border-radius: 8px;
 }
 
+:root[data-theme="outline"] {
+  color-scheme: dark;
+  background: #000000;
+  color: #eef3ff;
+  --bg: #000000;
+  --panel: rgba(0, 0, 0, 0.16);
+  --panel-alt: rgba(102, 165, 251, 0.08);
+  --surface: #000000;
+  --field: rgba(0, 0, 0, 0.18);
+  --ink: #eef3ff;
+  --text: #eef3ff;
+  --muted: #aeb8d6;
+  --line: #9aa8c6;
+  --accent: #66a5fb;
+  --accent-rgb: 102, 165, 251;
+  --accent-strong: #66a5fb;
+  --accent-soft: rgba(102, 165, 251, 0.12);
+  --ok: #63d685;
+  --ok-soft: rgba(99, 214, 133, 0.10);
+  --danger: #ff7a7a;
+  --danger-soft: rgba(255, 122, 122, 0.12);
+  --warning: #f6bf4f;
+  --warning-soft: rgba(246, 191, 79, 0.12);
+  --shadow: none;
+  --message-user: rgba(102, 165, 251, 0.05);
+  --message-assistant: rgba(99, 214, 133, 0.05);
+  --message-tool: rgba(154, 168, 198, 0.05);
+}
+
+:root[data-theme="outline"] body {
+  background: #000000;
+}
+
+:root[data-theme="outline"] .app-shell {
+  box-shadow: inset 0 0 0 2px var(--line);
+}
+
+:root[data-theme="outline"] .sidebar {
+  border-right-width: 2px;
+  background: #000000;
+}
+
+:root[data-theme="outline"] .content {
+  background: #000000;
+}
+
+:root[data-theme="outline"] .topbar {
+  border-bottom: 2px solid rgba(154, 168, 198, 0.42);
+  padding-bottom: 14px;
+}
+
+:root[data-theme="outline"] .workspace-card,
+:root[data-theme="outline"] .empty-workspace,
+:root[data-theme="outline"] .list-panel,
+:root[data-theme="outline"] .detail-panel,
+:root[data-theme="outline"] .summary-panel,
+:root[data-theme="outline"] .placeholder,
+:root[data-theme="outline"] .terminal-live-panel {
+  border-width: 2px;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+}
+
+:root[data-theme="outline"] .workspace-card,
+:root[data-theme="outline"] .empty-workspace {
+  position: relative;
+}
+
+:root[data-theme="outline"] .workspace-card::after,
+:root[data-theme="outline"] .empty-workspace::after,
+:root[data-theme="outline"] .list-panel::after,
+:root[data-theme="outline"] .detail-panel::after {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--line);
+  border-radius: 999px;
+  background: #000000;
+  content: "";
+}
+
+:root[data-theme="outline"] .workspace-card::after,
+:root[data-theme="outline"] .empty-workspace::after {
+  right: -6px;
+  top: 50%;
+}
+
+:root[data-theme="outline"] .list-panel,
+:root[data-theme="outline"] .detail-panel {
+  position: relative;
+}
+
+:root[data-theme="outline"] .list-panel::after {
+  right: -6px;
+  top: 22%;
+}
+
+:root[data-theme="outline"] .detail-panel::after {
+  left: -6px;
+  top: 42%;
+}
+
+:root[data-theme="outline"] .connection-row,
+:root[data-theme="outline"] .session-row,
+:root[data-theme="outline"] .file-row,
+:root[data-theme="outline"] .workflow-row,
+:root[data-theme="outline"] .skill-row,
+:root[data-theme="outline"] .cron-row,
+:root[data-theme="outline"] .kanban-task-row,
+:root[data-theme="outline"] .terminal-tab-chip {
+  border-width: 2px;
+  border-radius: 8px;
+  background: transparent;
+}
+
+:root[data-theme="outline"] .primary-button,
+:root[data-theme="outline"] .secondary-button,
+:root[data-theme="outline"] .danger-button,
+:root[data-theme="outline"] .icon-button,
+:root[data-theme="outline"] .locale-select {
+  border-width: 2px;
+  border-radius: 8px;
+  background: transparent;
+}
+
+:root[data-theme="outline"] .primary-button {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+}
+
+:root[data-theme="outline"] .primary-button:hover:not(:disabled) {
+  background: rgba(var(--accent-rgb), 0.20);
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.10);
+}
+
+:root[data-theme="outline"] .secondary-button,
+:root[data-theme="outline"] .icon-button,
+:root[data-theme="outline"] .locale-select {
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+:root[data-theme="outline"] .secondary-button:hover:not(:disabled),
+:root[data-theme="outline"] .icon-button:hover:not(:disabled),
+:root[data-theme="outline"] .locale-select:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.10);
+}
+
+:root[data-theme="outline"] .design-theme-toggle.active,
+:root[data-theme="outline"] .nav-item.active,
+:root[data-theme="outline"] .connection-row.active,
+:root[data-theme="outline"] .session-row.active,
+:root[data-theme="outline"] .file-row.active,
+:root[data-theme="outline"] .workflow-row.active,
+:root[data-theme="outline"] .skill-row.active,
+:root[data-theme="outline"] .cron-row.active,
+:root[data-theme="outline"] .kanban-task-row.active,
+:root[data-theme="outline"] .terminal-tab-chip.active {
+  border-color: #bcd0ff;
+  background: rgba(var(--accent-rgb), 0.08);
+  color: #d8e4ff;
+  box-shadow: 0 0 0 1px rgba(var(--accent-rgb), 0.24);
+}
+
+:root[data-theme="outline"] input,
+:root[data-theme="outline"] textarea,
+:root[data-theme="outline"] select,
+:root[data-theme="outline"] .mode-tabs,
+:root[data-theme="outline"] .session-detail-meta span,
+:root[data-theme="outline"] .inline-status,
+:root[data-theme="outline"] .banner,
+:root[data-theme="outline"] .update-banner,
+:root[data-theme="outline"] .resume-command,
+:root[data-theme="outline"] .kanban-status-column,
+:root[data-theme="outline"] .kanban-status-column header span,
+:root[data-theme="outline"] .terminal-command-runner,
+:root[data-theme="outline"] .terminal-status {
+  border-width: 2px;
+  background: transparent;
+}
+
+:root[data-theme="outline"] .mode-tabs button.active {
+  border: 2px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+}
+
+:root[data-theme="outline"] .message-card {
+  border-width: 2px;
+  border-radius: 8px;
+  background: transparent;
+}
+
+:root[data-theme="outline"] .message-card.user {
+  border-color: rgba(var(--accent-rgb), 0.72);
+  background: rgba(var(--accent-rgb), 0.05);
+}
+
+:root[data-theme="outline"] .message-card.assistant {
+  border-color: rgba(99, 214, 133, 0.58);
+  background: rgba(99, 214, 133, 0.05);
+}
+
+:root[data-theme="outline"] .message-card.tool {
+  border-color: var(--line);
+  background: transparent;
+}
+
+:root[data-theme="outline"] .icon-svg {
+  stroke-width: 2.6px;
+}
+
 * {
   box-sizing: border-box;
 }
