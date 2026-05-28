@@ -273,7 +273,12 @@ type CronJobFilter = "all" | "active" | "paused";
 type CronEditorMode = "view" | "create" | "edit";
 type TerminalTabStatus = "starting" | "running" | "exited" | "error";
 type TerminalThemeStyle = "graphite" | "evergreen" | "dusk" | "paper" | "aubergine" | "porcelain" | "custom";
-type AppTheme = "dark" | "light";
+const designAppThemeOptions = [
+  { id: "blue", label: "Blue", title: "Switch to blue theme" },
+] as const;
+type DesignAppTheme = (typeof designAppThemeOptions)[number]["id"];
+const designAppThemeIds = designAppThemeOptions.map((theme) => theme.id);
+type AppTheme = "dark" | "light" | DesignAppTheme;
 
 interface TerminalLiveTab extends TerminalSessionInfo {
   output: string;
@@ -575,7 +580,11 @@ function render() {
   applyAppTheme();
   const active = activeConnection();
   const visibleSections = active ? sections : sections.filter((section) => section.id === "connections");
-  const nextTheme = state.appTheme === "dark" ? "light" : "dark";
+  const nextTheme: AppTheme = state.appTheme === "light" ? "dark" : "light";
+  const isDesignTheme = isDesignAppTheme(state.appTheme);
+  const nextDesignTheme = nextDesignAppTheme(state.appTheme);
+  const designThemeTitle = nextDesignTheme === "dark" ? "Switch to dark mode" : designAppThemeTitle(nextDesignTheme);
+  const designThemeLabel = isDesignTheme ? designAppThemeLabel(state.appTheme) : designAppThemeLabel(nextDesignTheme);
 
   app.innerHTML = `
     <div class="app-shell">
@@ -614,8 +623,11 @@ function render() {
             <select class="locale-select" data-locale-select title="Language" aria-label="Language">
               ${localeOptions()}
             </select>
-            <button class="secondary-button theme-toggle" data-action="toggle-theme" title="${state.appTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}" aria-label="${state.appTheme === "dark" ? "Switch to light mode" : "Switch to dark mode"}">
-              ${icon(state.appTheme === "dark" ? "sun" : "moon")}<span>${nextTheme === "light" ? "Light" : "Dark"}</span>
+            <button class="secondary-button theme-toggle" data-action="toggle-theme" title="${state.appTheme === "light" ? "Switch to dark mode" : "Switch to light mode"}" aria-label="${state.appTheme === "light" ? "Switch to dark mode" : "Switch to light mode"}">
+              ${icon(state.appTheme === "light" ? "moon" : "sun")}<span>${nextTheme === "light" ? "Light" : "Dark"}</span>
+            </button>
+            <button class="secondary-button theme-toggle design-theme-toggle ${isDesignTheme ? "active" : ""}" data-action="cycle-design-theme" title="${escapeAttribute(designThemeTitle)}" aria-label="${escapeAttribute(designThemeTitle)}" aria-pressed="${isDesignTheme ? "true" : "false"}">
+              ${icon("brush")}<span>${escapeHtml(designThemeLabel)}</span>
             </button>
             <button class="secondary-button" data-action="check-updates" title="Check for updates" ${state.isCheckingForUpdates ? "disabled" : ""}>${icon("refresh")}<span>${state.isCheckingForUpdates ? "Checking" : "Updates"}</span></button>
             ${
@@ -821,11 +833,41 @@ function terminalThemeStyleValue(value: unknown): TerminalThemeStyle | undefined
 }
 
 function appThemeValue(value: unknown): AppTheme | undefined {
-  return value === "dark" || value === "light" ? value : undefined;
+  if (value === "dark" || value === "light" || isDesignAppTheme(value)) {
+    return value;
+  }
+  return undefined;
 }
 
 function applyAppTheme() {
   document.documentElement.dataset.theme = state.appTheme;
+}
+
+function isDesignAppTheme(value: unknown): value is DesignAppTheme {
+  return typeof value === "string" && designAppThemeIds.includes(value as DesignAppTheme);
+}
+
+function nextDesignAppTheme(currentTheme: AppTheme): AppTheme {
+  if (!isDesignAppTheme(currentTheme)) {
+    return designAppThemeIds[0];
+  }
+  const currentIndex = designAppThemeIds.indexOf(currentTheme);
+  return designAppThemeIds[currentIndex + 1] ?? "dark";
+}
+
+function designAppThemeLabel(theme: AppTheme) {
+  return designAppThemeOption(theme)?.label ?? designAppThemeOptions[0].label;
+}
+
+function designAppThemeTitle(theme: AppTheme) {
+  return designAppThemeOption(theme)?.title ?? designAppThemeOptions[0].title;
+}
+
+function designAppThemeOption(theme: AppTheme) {
+  if (!isDesignAppTheme(theme)) {
+    return null;
+  }
+  return designAppThemeOptions.find((option) => option.id === theme) ?? null;
 }
 
 function colorValue(value: unknown) {
@@ -3829,6 +3871,9 @@ function bindEvents() {
       if (action === "toggle-theme") {
         toggleAppTheme();
       }
+      if (action === "cycle-design-theme") {
+        cycleDesignAppTheme();
+      }
       if (action === "clear-error") {
         state = { ...state, error: null };
         render();
@@ -4533,7 +4578,19 @@ async function updateAppLocale(locale: AppLocale) {
 }
 
 function toggleAppTheme() {
-  const appTheme: AppTheme = state.appTheme === "dark" ? "light" : "dark";
+  const appTheme: AppTheme = state.appTheme === "light" ? "dark" : "light";
+  state = {
+    ...state,
+    appTheme,
+    status: t("Theme updated."),
+    error: null,
+  };
+  render();
+  scrollTerminalToBottom();
+}
+
+function cycleDesignAppTheme() {
+  const appTheme = nextDesignAppTheme(state.appTheme);
   state = {
     ...state,
     appTheme,
@@ -8048,6 +8105,7 @@ function icon(name: string) {
     arrowUp: `<svg class="icon-svg" viewBox="0 0 24 24"><polyline points="18 15 12 9 6 15"/></svg>`,
     book: `<svg class="icon-svg" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>`,
     bookmark: `<svg class="icon-svg" viewBox="0 0 24 24"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>`,
+    brush: `<svg class="icon-svg" viewBox="0 0 24 24"><path d="M18.37 2.63a2.12 2.12 0 0 1 3 3l-9.62 9.62-3.18.63.63-3.18 9.62-9.62z"/><path d="M9.5 14.5c-1.5 0-3 1-3 3 0 1.3-1 2.5-2.5 2.5 1.6 1 4.6 1 6.3-.8 1.3-1.3 1.2-3.5-.8-4.7z"/></svg>`,
     calendar: `<svg class="icon-svg" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
     chart: `<svg class="icon-svg" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>`,
     check: `<svg class="icon-svg" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>`,

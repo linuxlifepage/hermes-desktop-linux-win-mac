@@ -19,6 +19,7 @@
   --muted: #777777;
   --line: #252525;
   --accent: #D4E815;
+  --accent-rgb: 212, 232, 21;
   --accent-strong: #E5F20D;
   --accent-soft: #1a1c0a;
   --ok: #4ade80;
@@ -47,6 +48,7 @@
   --muted: #666666;
   --line: #dcdcdc;
   --accent: #b8c400;
+  --accent-rgb: 184, 196, 0;
   --accent-strong: #8a9300;
   --accent-soft: #f3f5d0;
   --ok: #16a34a;
@@ -59,6 +61,64 @@
   --message-user: #f7f8e8;
   --message-assistant: #f0fdf4;
   --message-tool: #f5f5f5;
+}
+
+:root[data-theme="blue"] {
+  color-scheme: dark;
+  background: #000000;
+  color: #f3f4f7;
+  --bg: #000000;
+  --panel: #151515;
+  --panel-alt: #202020;
+  --surface: #0d0d0d;
+  --field: #050505;
+  --ink: #f3f4f7;
+  --text: #f3f4f7;
+  --muted: #9a9aa0;
+  --line: #2b2b2b;
+  --accent: #66a5fb;
+  --accent-rgb: 102, 165, 251;
+  --accent-strong: #66a5fb;
+  --accent-soft: #0b1727;
+  --ok: #5fe08d;
+  --ok-soft: #071c10;
+  --danger: #ff7a7a;
+  --danger-soft: #241010;
+  --warning: #f6bf4f;
+  --warning-soft: #211907;
+  --shadow: 0 18px 48px rgba(0, 0, 0, 0.56);
+  --message-user: #09172a;
+  --message-assistant: #071c10;
+  --message-tool: #111111;
+}
+
+:root[data-theme="blue"] .workspace-card,
+:root[data-theme="blue"] .empty-workspace,
+:root[data-theme="blue"] .list-panel,
+:root[data-theme="blue"] .detail-panel,
+:root[data-theme="blue"] .summary-panel,
+:root[data-theme="blue"] .placeholder,
+:root[data-theme="blue"] .terminal-live-panel {
+  border-radius: 8px;
+}
+
+:root[data-theme="blue"] .connection-row,
+:root[data-theme="blue"] .session-row,
+:root[data-theme="blue"] .file-row,
+:root[data-theme="blue"] .workflow-row,
+:root[data-theme="blue"] .skill-row,
+:root[data-theme="blue"] .cron-row,
+:root[data-theme="blue"] .kanban-task-row,
+:root[data-theme="blue"] .terminal-tab-chip {
+  border-radius: 8px;
+}
+
+:root[data-theme="blue"] .primary-button,
+:root[data-theme="blue"] .secondary-button,
+:root[data-theme="blue"] .danger-button,
+:root[data-theme="blue"] .icon-button,
+:root[data-theme="blue"] .locale-select {
+  border-radius: 8px;
 }
 
 * {
@@ -217,7 +277,7 @@ input[type="checkbox"] {
 }
 
 .nav-item.active {
-  background: rgba(212, 232, 21, 0.08);
+  background: rgba(var(--accent-rgb), 0.08);
   color: var(--accent);
   box-shadow: none;
 }
@@ -333,7 +393,7 @@ input[type="checkbox"] {
 
 .primary-button:hover:not(:disabled) {
   background: var(--accent-strong);
-  box-shadow: 0 0 20px rgba(212, 232, 21, 0.2);
+  box-shadow: 0 0 20px rgba(var(--accent-rgb), 0.2);
 }
 
 .secondary-button {
@@ -344,6 +404,12 @@ input[type="checkbox"] {
 
 .secondary-button:hover:not(:disabled) {
   border-color: var(--accent);
+  color: var(--accent);
+}
+
+.design-theme-toggle.active {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: var(--accent-soft);
   color: var(--accent);
 }
 
@@ -578,7 +644,7 @@ input[type="checkbox"] {
 }
 
 .terminal-tab-chip.active {
-  border-color: rgba(212, 232, 21, 0.35);
+  border-color: rgba(var(--accent-rgb), 0.35);
   background: var(--accent-soft);
 }
 
@@ -882,7 +948,7 @@ input[type="checkbox"] {
 .workflow-row.active,
 .skill-row.active,
 .cron-row.active {
-  border-color: rgba(212, 232, 21, 0.30);
+  border-color: rgba(var(--accent-rgb), 0.30);
   background: var(--accent-soft);
 }
 
@@ -949,7 +1015,7 @@ input[type="checkbox"] {
 .cron-form input:focus,
 .cron-form textarea:focus {
   border-color: var(--accent);
-  outline: 2px solid rgba(212, 232, 21, 0.15);
+  outline: 2px solid rgba(var(--accent-rgb), 0.15);
 }
 
 .chat-composer textarea {
@@ -1138,7 +1204,7 @@ input[type="checkbox"] {
 }
 
 .kanban-task-row.active {
-  border-color: rgba(212, 232, 21, 0.30);
+  border-color: rgba(var(--accent-rgb), 0.30);
   background: var(--accent-soft);
 }
 
@@ -1583,7 +1649,7 @@ input[type="checkbox"] {
   flex: 1 1 2px;
   min-width: 2px;
   border-radius: 4px 4px 0 0;
-  background: linear-gradient(180deg, var(--accent), rgba(212, 232, 21, 0.35));
+  background: linear-gradient(180deg, var(--accent), rgba(var(--accent-rgb), 0.35));
 }
 
 .usage-chart-legend {
@@ -2492,7 +2558,7 @@ input[type="checkbox"] {
 }
 
 .message-card.user {
-  border-color: rgba(212, 232, 21, 0.18);
+  border-color: rgba(var(--accent-rgb), 0.18);
   background: var(--message-user);
 }
 
