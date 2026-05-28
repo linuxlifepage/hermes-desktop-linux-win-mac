@@ -410,7 +410,7 @@ fn open_pty(cols: Option<u16>, rows: Option<u16>) -> Result<(File, File)> {
             &mut master_fd,
             &mut slave_fd,
             std::ptr::null_mut(),
-            std::ptr::null(),
+            std::ptr::null_mut(),
             &mut winsize,
         )
     };
