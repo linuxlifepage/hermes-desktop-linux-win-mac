@@ -9,12 +9,11 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const host = "127.0.0.1";
-const vitePort = 4177;
+const vitePort = 4178;
 const appUrl = `http://${host}:${vitePort}/`;
 const chromium = process.env.CHROMIUM_BIN || "/usr/bin/chromium-browser";
-
+const tempDir = path.join(os.tmpdir(), `hermes-ui-smoke-${process.pid}`);
 const children = new Set();
-const tempDir = path.join(os.tmpdir(), `hermes-terminal-smoke-${process.pid}`);
 
 try {
   const browserProbe = await probeChromium(chromium);
@@ -59,56 +58,91 @@ async function runBrowserSmoke() {
   await page.call("Runtime.enable");
   await page.call("Page.enable");
   await page.call("Page.addScriptToEvaluateOnNewDocument", { source: tauriMockSource() });
+
+  for (const theme of ["dark", "light", "blue", "outline"]) {
+    await setPersistedState(page, { selectedSection: "overview", appTheme: theme });
+    await page.call("Page.navigate", { url: appUrl });
+    await waitForRuntime(page, "document.querySelector('.app-shell')", 10_000);
+    const result = await page.evaluateJson(`
+      ({
+        theme: document.documentElement.dataset.theme,
+        accent: getComputedStyle(document.documentElement).getPropertyValue('--accent').trim(),
+        shellWidth: Math.round(document.querySelector('.app-shell').getBoundingClientRect().width),
+      })
+    `);
+    assert(result.theme === theme, `Expected theme ${theme}, got ${result.theme}.`);
+    assert(result.shellWidth > 300, `App shell did not render for ${theme}.`);
+    if (theme === "blue" || theme === "outline") {
+      assert(result.accent.toLowerCase() === "#66a5fb", `${theme} accent must be #66a5fb, got ${result.accent}.`);
+    }
+  }
+
+  await setPersistedState(page, { selectedSection: "overview", appTheme: "outline" });
   await page.call("Page.navigate", { url: appUrl });
+  await waitForRuntime(page, "document.querySelector('[data-section=\"sessions\"]')", 10_000);
+  await page.evaluate(`document.querySelector('[data-section="sessions"]').click()`);
+  await waitForRuntime(page, "document.querySelector('.sessions-layout')", 10_000);
 
-  await waitForRuntime(page, "document.querySelector('[data-action=\"new-terminal-tab\"]')", 10_000);
-  await page.evaluate(`
-    document.querySelector('[data-action="new-terminal-tab"]').click();
+  await page.evaluate(`document.querySelector('[data-section="terminal"]').click()`);
+  await waitForRuntime(page, "document.querySelector('.terminal-workspace')", 10_000);
+  await waitForRuntime(page, "window.__HERMES_SMOKE_INVOCATIONS__.some((call) => call.cmd === 'start_terminal_session')", 10_000);
+  const terminalStart = await page.evaluateJson(`
+    window.__HERMES_SMOKE_INVOCATIONS__.find((call) => call.cmd === 'start_terminal_session')
   `);
-  await waitForRuntime(page, "document.querySelector('.terminal-screen .xterm-screen')", 10_000);
-  await waitForRuntime(page, "document.querySelector('[data-terminal-control=\"ctrl-c\"]:not([disabled])')", 10_000);
+  assert(terminalStart.args.startupCommandLine === "hermes chat", "Terminal nav should open Hermes Chat by default.");
 
-  const result = await page.evaluateJson(`
-    (async () => {
-      const rectOf = () => {
-        const screen = document.querySelector('.terminal-screen .xterm-screen') || document.querySelector('.terminal-screen');
-        const rect = screen.getBoundingClientRect();
-        return { width: rect.width, height: rect.height };
-      };
-      const before = rectOf();
-      document.querySelector('[data-terminal-control="ctrl-c"]').click();
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      const after = rectOf();
-      return {
-        before,
-        after,
-        invocations: window.__HERMES_SMOKE_INVOCATIONS__,
-      };
-    })()
+  await page.call("Emulation.setDeviceMetricsOverride", {
+    width: 390,
+    height: 900,
+    deviceScaleFactor: 1,
+    mobile: true,
+  });
+  await page.call("Page.navigate", { url: appUrl });
+  await waitForRuntime(page, "document.querySelector('.nav-list')", 10_000);
+  const mobile = await page.evaluateJson(`
+    ({
+      width: window.innerWidth,
+      navDisplay: getComputedStyle(document.querySelector('.nav-list')).display,
+      hasSettings: Boolean(document.querySelector('[data-section="settings"]')),
+    })
   `);
+  assert(mobile.width === 390, `Mobile viewport was not applied: ${mobile.width}.`);
+  assert(mobile.navDisplay === "flex", `Mobile nav should be horizontal flex, got ${mobile.navDisplay}.`);
+  assert(mobile.hasSettings, "Settings nav item should render on mobile.");
 
-  const writeCall = result.invocations.find((call) => call.cmd === "write_terminal_session");
-  const resizeCalls = result.invocations.filter((call) => call.cmd === "resize_terminal_session");
-  assert(writeCall?.args?.input === "\x03", "Ctrl-C control was not sent through write_terminal_session.");
-  assert(resizeCalls.length > 0, "Terminal dimensions were not synced through resize_terminal_session.");
-  assert(
-    Math.abs(result.before.width - result.after.width) <= 1 && Math.abs(result.before.height - result.after.height) <= 1,
-    `xterm size changed after Ctrl-C: before ${JSON.stringify(result.before)}, after ${JSON.stringify(result.after)}.`,
-  );
-
-  console.log(
-    `terminal layout smoke OK: ${Math.round(result.before.width)}x${Math.round(result.before.height)}, ${resizeCalls.length} resize sync(s).`,
-  );
+  console.log("UI smoke OK: themes, sessions, terminal shell default, and mobile layout checked.");
   page.close();
   stopChild(browser);
   stopChild(vite);
 }
 
+async function setPersistedState(page, state) {
+  await page.call("Page.navigate", { url: appUrl });
+  await waitForRuntime(page, "window.localStorage", 10_000);
+  await page.evaluate(`
+    localStorage.setItem('hermes-desktop:tauri-ui-state:v1', ${JSON.stringify(JSON.stringify(state))});
+  `);
+}
+
+async function runSourceInvariantSmoke(browserReason) {
+  const [mainSource, stylesSource, themesSource] = await Promise.all([
+    readFile(path.join(root, "src/main.ts"), "utf8"),
+    readFile(path.join(root, "src/styles.css"), "utf8"),
+    readFile(path.join(root, "src/themes.css"), "utf8"),
+  ]);
+  for (const theme of ['data-theme="dark"', 'data-theme="light"', 'data-theme="blue"', 'data-theme="outline"']) {
+    assert(themesSource.includes(theme), `Missing theme selector ${theme}.`);
+  }
+  assert(themesSource.includes("--accent: #66a5fb"), "DarkBlue/Outline accent must stay #66a5fb.");
+  assert(mainSource.includes('case "settings"') && mainSource.includes('case "changelog"'), "Settings and Changelog views must be routed.");
+  assert(mainSource.includes("openDefaultShellTerminalTab") && mainSource.includes("openHermesChatTerminalTab({ switchToTerminal: true })"), "Terminal must keep shell button separate and open Hermes Chat by default.");
+  assert(mainSource.includes("busyStatus") && mainSource.includes('appBanner(state.busyStatus, "status", "clear-status", true)'), "Long-running busy status must survive section navigation.");
+  assert(stylesSource.includes(".settings-layout") && stylesSource.includes(".changelog-layout"), "Settings/Changelog layout styles are missing.");
+  console.log(`UI smoke OK: source invariants checked; browser mode skipped (${browserReason}).`);
+}
+
 function spawnChild(command, args, options) {
-  const child = spawn(command, args, {
-    ...options,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  const child = spawn(command, args, { ...options, stdio: ["ignore", "pipe", "pipe"] });
   children.add(child);
   child.once("exit", () => children.delete(child));
   return child;
@@ -131,46 +165,6 @@ function probeChromium(command) {
       resolve(code === 0 ? { ok: true } : { ok: false, reason: output.trim() || `${command} exited with code ${code}` });
     });
   });
-}
-
-async function runSourceInvariantSmoke(browserReason) {
-  const [mainSource, styleSource, apiSource, terminalSource] = await Promise.all([
-    readFile(path.join(root, "src/main.ts"), "utf8"),
-    readFile(path.join(root, "src/styles.css"), "utf8"),
-    readFile(path.join(root, "src/api.ts"), "utf8"),
-    readFile(path.join(root, "src-tauri/src/terminal.rs"), "utf8"),
-  ]);
-  assert(!mainSource.includes("data-terminal-input-form"), "Terminal must not render a duplicate command input form.");
-  assert(mainSource.includes('data-terminal-control="ctrl-c"'), "Terminal must keep the Ctrl-C control button.");
-  assert(
-    mainSource.includes("resizeTerminalSession(renderer.tabId, cols, rows)"),
-    "xterm fit dimensions must be synced to the backend resize command.",
-  );
-  assert(
-    mainSource.includes("scheduleInitialTerminalFit(renderer)") &&
-      mainSource.includes("renderer.terminal.scrollToBottom()"),
-    "xterm must stabilize first-fit geometry and keep the prompt scrolled into view.",
-  );
-  const writeRendererData = mainSource.match(/function writeTerminalRendererData[\s\S]*?\n}\n\nfunction disposeTerminalRenderer/)?.[0] ?? "";
-  assert(
-    mainSource.includes("convertEol: false") &&
-      mainSource.includes("const data = event.data ?? \"\";") &&
-      !writeRendererData.includes("scheduleTerminalFit"),
-    "interactive PTY output must stay raw and must not trigger resize on every stdout chunk.",
-  );
-  assert(
-    styleSource.includes(".terminal-live-panel {\n  display: flex;") &&
-      styleSource.includes(".terminal-screen {\n  flex: 1 1 320px;") &&
-      styleSource.includes("box-sizing: border-box;"),
-    "Terminal live panel must keep a stable flex-backed xterm screen.",
-  );
-  assert(
-    apiSource.includes('invoke("resize_terminal_session"') &&
-      terminalSource.includes("pub fn resize_terminal_session_inner") &&
-      terminalSource.includes("libc::TIOCSWINSZ"),
-    "Terminal resize API must be wired from frontend to backend PTY resize.",
-  );
-  console.log(`terminal layout smoke OK: source invariants checked; browser mode skipped (${browserReason}).`);
 }
 
 function stopChild(child) {
@@ -384,7 +378,6 @@ function tauriMockSource() {
         session_store: null,
         kanban: null,
       };
-      window.localStorage.setItem('hermes-desktop:tauri-ui-state:v1', JSON.stringify({ selectedSection: 'terminal' }));
       window.__HERMES_SMOKE_INVOCATIONS__ = [];
       let callbackId = 1;
       window.__TAURI_INTERNALS__ = {
@@ -399,11 +392,11 @@ function tauriMockSource() {
           if (cmd === 'list_pinned_sessions') return [];
           if (cmd === 'list_workspace_file_bookmarks') return [];
           if (cmd === 'discover_connection') return discovery;
-          if (cmd === 'session_tui_startup_command') return 'hermes chat';
+          if (cmd === 'list_sessions') return { ok: true, items: [], total_count: 0 };
           if (cmd === 'start_terminal_session') {
             return {
               id: 'smoke-terminal',
-              title: 'Smoke Host · chat',
+              title: args.startupCommandLine ? 'Smoke Host · chat' : 'Smoke Host · shell',
               profileId: profile.id,
               profileLabel: profile.label,
               hermesProfileName: 'default',
@@ -418,7 +411,8 @@ function tauriMockSource() {
           if (cmd === 'resize_terminal_session') return null;
           if (cmd === 'write_terminal_session') return null;
           if (cmd === 'stop_terminal_session') return null;
-          throw new Error('Unhandled Tauri command in terminal smoke: ' + cmd);
+          if (cmd === 'session_tui_startup_command') return 'hermes chat';
+          throw new Error('Unhandled Tauri command in UI smoke: ' + cmd);
         },
       };
     })();

@@ -117,7 +117,11 @@
 :root[data-theme="blue"] .secondary-button,
 :root[data-theme="blue"] .danger-button,
 :root[data-theme="blue"] .icon-button,
-:root[data-theme="blue"] .locale-select {
+:root[data-theme="blue"] .locale-select,
+:root[data-theme="blue"] .release-card,
+:root[data-theme="blue"] .release-assets a,
+:root[data-theme="blue"] .settings-theme-grid button,
+:root[data-theme="blue"] .settings-facts div {
   border-radius: 8px;
 }
 
@@ -297,10 +301,13 @@
 :root[data-theme="outline"] .inline-status,
 :root[data-theme="outline"] .banner,
 :root[data-theme="outline"] .update-banner,
+:root[data-theme="outline"] .release-card,
+:root[data-theme="outline"] .release-assets a,
+:root[data-theme="outline"] .settings-theme-grid button,
+:root[data-theme="outline"] .settings-facts div,
 :root[data-theme="outline"] .resume-command,
 :root[data-theme="outline"] .kanban-status-column,
 :root[data-theme="outline"] .kanban-status-column header span,
-:root[data-theme="outline"] .terminal-command-runner,
 :root[data-theme="outline"] .terminal-status {
   border-width: 2px;
   background: transparent;

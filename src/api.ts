@@ -50,6 +50,14 @@ export function markAutomaticUpdateCheck(): Promise<AppSnapshot> {
   return invoke("mark_automatic_update_check");
 }
 
+export function saveLocalExport(fileName: string, contents: string): Promise<string> {
+  return invoke("save_local_export", { fileName, contents });
+}
+
+export function saveHermesDirectoryBackup(profile: ConnectionProfile): Promise<string> {
+  return invoke("save_hermes_directory_backup", { profile });
+}
+
 export function saveConnection(profile: ConnectionProfile): Promise<ConnectionProfile> {
   return invoke("save_connection", { profile });
 }

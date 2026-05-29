@@ -6,7 +6,7 @@
 - `src/styles.css` holds shared layout/component CSS; `src/themes.css` holds theme variables and overrides.
 - `src/locales/` contains `.strings` localization files; keep locale keys in sync.
 - `src-tauri/src/` contains Rust backend modules for SSH, storage, terminal, files, workflows, cron, kanban, and skills.
-- `assets/` contains images used by docs/UI; `scripts/` contains local checks and helper scripts.
+- `assets/` contains images used by docs/UI; `scripts/` contains local checks, release prep, and smoke scripts.
 - `.github/workflows/tauri-ci.yml` builds Linux, macOS, and Windows bundles.
 
 ## Build, Test, and Development Commands
@@ -18,6 +18,7 @@
 - `cargo fmt --manifest-path src-tauri/Cargo.toml -- --check` checks Rust formatting.
 - `cargo check --manifest-path src-tauri/Cargo.toml` checks Rust compilation.
 - `cargo test --manifest-path src-tauri/Cargo.toml` runs Rust unit tests.
+- `npm run test:smoke:ui` checks theme/view/mobile UI invariants, using Chromium when available.
 
 ## Coding Style & Naming Conventions
 
@@ -25,7 +26,7 @@ Use TypeScript `strict` conventions and keep UI edits close to existing patterns
 
 ## Testing Guidelines
 
-Run `npm run test:i18n`, `npm run build`, `cargo fmt --check`, `cargo check`, and `cargo test` before release-oriented changes. Rust tests live alongside modules under `src-tauri/src/`. SSH smoke tests are ignored by default; configure `HERMES_SMOKE_*` before running them.
+Run `npm run test:i18n`, `npm run test:smoke:ui`, `npm run build`, `cargo fmt --check`, `cargo check`, and `cargo test` before release-oriented changes. Rust tests live alongside modules under `src-tauri/src/`. SSH smoke tests are ignored by default; configure `HERMES_SMOKE_*` before running them.
 
 ## Commit & Pull Request Guidelines
 
@@ -33,4 +34,4 @@ History uses concise imperative commit messages, for example `Fix macOS PTY open
 
 ## Release & Configuration Notes
 
-Do not create GitHub Releases manually before CI artifacts exist. Normal flow: commit changes, create an annotated tag such as `v0.10.4`, then push `main` and the tag. GitHub Actions builds bundles and creates or updates the release. Keep versions synchronized across `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`.
+Do not create GitHub Releases manually before CI artifacts exist. For release prep, run `npm run release:prepare -- 0.10.4`; it only bumps versions and runs checks. Normal flow after review: `git commit -m "Release v0.10.4"`, `git tag -a v0.10.4 -m "Release v0.10.4"`, then `git push origin main v0.10.4`. GitHub Actions builds bundles and creates or updates the release.

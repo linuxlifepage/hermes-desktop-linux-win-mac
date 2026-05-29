@@ -8,11 +8,10 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
 const versionArg = args.find((arg) => !arg.startsWith("--"));
-const shouldPush = args.includes("--push");
 const skipChecks = args.includes("--skip-checks");
 
 if (!versionArg) {
-  fail("Usage: npm run release -- <version> [--push] [--skip-checks]");
+  fail("Usage: npm run release:prepare -- <version> [--skip-checks]");
 }
 
 const version = normalizeVersion(versionArg);
@@ -20,10 +19,6 @@ const tag = `v${version}`;
 
 assertCleanWorkingTree();
 assertTagDoesNotExist(tag);
-
-const previousTag = latestTag();
-const releaseNotes = buildReleaseNotes(previousTag, tag);
-
 updateVersions(version);
 
 if (!skipChecks) {
@@ -34,21 +29,13 @@ if (!skipChecks) {
   run("cargo", ["test", "--manifest-path", "src-tauri/Cargo.toml"]);
 }
 
-run("git", ["add", "package.json", "package-lock.json", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock", "src-tauri/tauri.conf.json"]);
-run("git", ["commit", "-m", `Release ${tag}`]);
-run("git", ["tag", "-a", tag, "-m", `Release ${tag}`, "-m", "Release notes:", "-m", releaseNotes]);
-
-if (shouldPush) {
-  const branch = git(["branch", "--show-current"]).trim();
-  if (!branch) {
-    fail("Could not determine the current branch for push.");
-  }
-  run("git", ["push", "origin", branch, tag]);
-  console.log(`Release ${tag} pushed. GitHub Actions will build artifacts and create the release.`);
-} else {
-  console.log(`Release ${tag} committed and tagged locally.`);
-  console.log(`Run: git push origin ${currentBranchForMessage()} ${tag}`);
-}
+console.log(`Release ${tag} is prepared.`);
+console.log("");
+console.log("Review the version changes, then run:");
+console.log(`  git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json`);
+console.log(`  git commit -m "Release ${tag}"`);
+console.log(`  git tag -a ${tag} -m "Release ${tag}"`);
+console.log(`  git push origin ${currentBranchForMessage()} ${tag}`);
 
 function normalizeVersion(value) {
   const normalized = value.trim().replace(/^v/i, "");
@@ -61,7 +48,7 @@ function normalizeVersion(value) {
 function assertCleanWorkingTree() {
   const status = git(["status", "--porcelain"]);
   if (status.trim()) {
-    fail("Working tree is not clean. Commit or stash changes before running the release script.");
+    fail("Working tree is not clean. Commit or stash changes before preparing a release.");
   }
 }
 
@@ -70,22 +57,6 @@ function assertTagDoesNotExist(tagName) {
   if (existing) {
     fail(`Tag ${tagName} already exists.`);
   }
-}
-
-function latestTag() {
-  try {
-    return git(["describe", "--tags", "--abbrev=0"]).trim();
-  } catch {
-    return null;
-  }
-}
-
-function buildReleaseNotes(previousTag, tagName) {
-  if (!previousTag) {
-    return `- Initial ${tagName} release.`;
-  }
-  const log = git(["log", "--pretty=format:- %s", `${previousTag}..HEAD`]).trim();
-  return log || `- Version bump for ${tagName}.`;
 }
 
 function updateVersions(nextVersion) {

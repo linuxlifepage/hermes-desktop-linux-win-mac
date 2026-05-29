@@ -48,7 +48,8 @@ import {
   resumeCronJob,
   resizeTerminalSession,
   runCronJobNow,
-  runTerminalCommand,
+  saveHermesDirectoryBackup,
+  saveLocalExport,
   saveConnection,
   saveWorkspaceFile,
   sendSessionMessage,
@@ -98,7 +99,6 @@ import type {
   PinnedSession,
   SkillDetail,
   SkillSummary,
-  TerminalCommandResult,
   TerminalSessionEvent,
   TerminalSessionInfo,
   UsageProfileSlice,
@@ -122,6 +122,37 @@ import {
 import type { AppLocale } from "./i18n";
 import { checkForHermesDesktopUpdate, normalizedDisplayVersion } from "./update";
 import type { AvailableUpdate } from "./update";
+import {
+  appThemeOptions,
+  appThemeValue,
+  designAppThemeLabel,
+  isDesignAppTheme,
+} from "./themes";
+import type { AppTheme } from "./themes";
+import {
+  booleanValue,
+  colorValue,
+  isPlainRecord,
+  loadPersistedJson,
+  nullableStringValue,
+  savePersistedJson,
+  stringValue,
+} from "./state/persistence";
+import { sessionTranscriptMarkdown, sessionTranscriptText } from "./render/session";
+import {
+  resolveTerminalTheme,
+  terminalThemePresets,
+  terminalThemeStyleAttribute,
+  terminalThemeStyleValue,
+  xtermThemeForPreset,
+} from "./render/terminal";
+import type { TerminalThemeStyle } from "./render/terminal";
+import {
+  createHermesBackupPayload,
+  createProfilesExportPayload,
+  exportedJsonText,
+  timestampedFilename,
+} from "./render/files";
 
 const sections: Array<{ id: SectionId; title: string; icon: string }> = [
   { id: "connections", title: "Connections", icon: "network" },
@@ -134,6 +165,8 @@ const sections: Array<{ id: SectionId; title: string; icon: string }> = [
   { id: "usage", title: "Usage", icon: "chart" },
   { id: "skills", title: "Skills", icon: "book" },
   { id: "terminal", title: "Terminal", icon: "terminal" },
+  { id: "changelog", title: "Changelog", icon: "file" },
+  { id: "settings", title: "Settings", icon: "settings" },
 ];
 
 const sectionKeyboardShortcuts: Record<string, SectionId> = {
@@ -155,6 +188,7 @@ interface AppState {
   selectedConnectionId: string | null;
   overview: RemoteDiscovery | null;
   status: string | null;
+  busyStatus: string | null;
   error: string | null;
   isBusy: boolean;
   availableUpdate: AvailableUpdate | null;
@@ -193,10 +227,6 @@ interface AppState {
   workflowEditorMode: "view" | "create" | "edit";
   workflowDraft: WorkflowDraftForm;
   workflowLaunchPreview: WorkflowLaunchPreview | null;
-  terminalCommand: string;
-  terminalHistory: TerminalCommandResult[];
-  terminalError: string | null;
-  isRunningTerminalCommand: boolean;
   terminalTabs: TerminalLiveTab[];
   selectedTerminalTabId: string | null;
   terminalThemeStyle: TerminalThemeStyle;
@@ -273,27 +303,12 @@ interface AppState {
 type CronJobFilter = "all" | "active" | "paused";
 type CronEditorMode = "view" | "create" | "edit";
 type TerminalTabStatus = "starting" | "running" | "exited" | "error";
-type TerminalThemeStyle = "graphite" | "evergreen" | "dusk" | "paper" | "aubergine" | "porcelain" | "custom";
-const designAppThemeOptions = [
-  { id: "blue", label: "DarkBlue", title: "Switch to dark blue theme" },
-  { id: "outline", label: "Outline", title: "Switch to outline theme" },
-] as const;
-type DesignAppTheme = (typeof designAppThemeOptions)[number]["id"];
-const designAppThemeIds = designAppThemeOptions.map((theme) => theme.id);
-type AppTheme = "dark" | "light" | DesignAppTheme;
-type AppThemeOption = {
-  id: AppTheme;
-  label: string;
-  title: string;
-  icon: string;
-};
 
 interface TerminalLiveTab extends TerminalSessionInfo {
   output: string;
   stderrOutput: string;
   status: TerminalTabStatus;
   exitCode: number | null;
-  inputDraft: string;
   initialInputSent: boolean;
   lastEventAt: string | null;
 }
@@ -307,6 +322,8 @@ interface TerminalRenderer {
   writtenLength: number;
   syncedCols: number;
   syncedRows: number;
+  fitRaf: number | null;
+  initialFitTimer: number | null;
   resizeObserver?: ResizeObserver;
 }
 
@@ -362,7 +379,6 @@ interface PersistedAppUiState {
   autoApproveCommands?: boolean;
   selectedWorkflowId?: string | null;
   workflowQuery?: string;
-  terminalCommand?: string;
   terminalThemeStyle?: TerminalThemeStyle;
   terminalCustomBackground?: string;
   terminalCustomForeground?: string;
@@ -405,6 +421,7 @@ let state: AppState = {
   selectedConnectionId: null,
   overview: null,
   status: null,
+  busyStatus: null,
   error: null,
   isBusy: false,
   availableUpdate: null,
@@ -443,10 +460,6 @@ let state: AppState = {
   workflowEditorMode: "view",
   workflowDraft: emptyWorkflowDraft(),
   workflowLaunchPreview: null,
-  terminalCommand: "pwd && hermes --version",
-  terminalHistory: [],
-  terminalError: null,
-  isRunningTerminalCommand: false,
   terminalTabs: [],
   selectedTerminalTabId: null,
   terminalThemeStyle: "graphite",
@@ -588,7 +601,9 @@ async function boot() {
 function render() {
   applyAppTheme();
   const active = activeConnection();
-  const visibleSections = active ? sections : sections.filter((section) => section.id === "connections");
+  const visibleSections = active
+    ? sections
+    : sections.filter((section) => section.id === "connections" || section.id === "settings" || section.id === "changelog");
   const nextTheme: AppTheme = state.appTheme === "light" ? "dark" : "light";
   const isDesignTheme = isDesignAppTheme(state.appTheme);
   const themeMenuLabel = isDesignTheme ? designAppThemeLabel(state.appTheme) : "Theme";
@@ -651,6 +666,7 @@ function render() {
 
         ${state.error ? appBanner(state.error, "error", "clear-error") : ""}
         ${state.updateCheckError ? appBanner(state.updateCheckError, "error", "clear-update-error") : ""}
+        ${state.isBusy && state.busyStatus ? appBanner(state.busyStatus, "status", "clear-status", true) : ""}
         ${state.status ? appBanner(state.status, "status", "clear-status") : ""}
         ${state.availableUpdate ? updateBanner(state.availableUpdate) : ""}
 
@@ -668,24 +684,11 @@ function render() {
 }
 
 function loadPersistedUiState(): PersistedAppUiState {
-  try {
-    const raw = window.localStorage.getItem(persistedUiStateKey);
-    if (!raw) {
-      return {};
-    }
-    const parsed = JSON.parse(raw);
-    return isPlainRecord(parsed) ? sanitizePersistedUiState(parsed) : {};
-  } catch {
-    return {};
-  }
+  return loadPersistedJson(persistedUiStateKey, sanitizePersistedUiState, {});
 }
 
 function savePersistedUiState() {
-  try {
-    window.localStorage.setItem(persistedUiStateKey, JSON.stringify(persistedUiStateFromState()));
-  } catch {
-    // UI state persistence is a convenience; storage failures should not interrupt the app.
-  }
+  savePersistedJson(persistedUiStateKey, persistedUiStateFromState());
 }
 
 function persistedUiStateFromState(): PersistedAppUiState {
@@ -699,7 +702,6 @@ function persistedUiStateFromState(): PersistedAppUiState {
     autoApproveCommands: state.autoApproveCommands,
     selectedWorkflowId: state.selectedWorkflowId,
     workflowQuery: state.workflowQuery,
-    terminalCommand: state.terminalCommand,
     terminalThemeStyle: state.terminalThemeStyle,
     terminalCustomBackground: state.terminalCustomBackground,
     terminalCustomForeground: state.terminalCustomForeground,
@@ -747,7 +749,6 @@ function restoredUiStatePatch(persisted: PersistedAppUiState): Partial<AppState>
     appTheme: persisted.appTheme ?? "dark",
     selectedWorkflowId: persisted.selectedWorkflowId ?? null,
     workflowQuery: persisted.workflowQuery ?? "",
-    terminalCommand: persisted.terminalCommand ?? "pwd && hermes --version",
     terminalThemeStyle: persisted.terminalThemeStyle ?? "graphite",
     terminalCustomBackground: persisted.terminalCustomBackground ?? "#12161D",
     terminalCustomForeground: persisted.terminalCustomForeground ?? "#E7ECF3",
@@ -777,7 +778,6 @@ function sanitizePersistedUiState(record: Record<string, unknown>): PersistedApp
     autoApproveCommands: booleanValue(record.autoApproveCommands),
     selectedWorkflowId: nullableStringValue(record.selectedWorkflowId),
     workflowQuery: stringValue(record.workflowQuery),
-    terminalCommand: stringValue(record.terminalCommand),
     terminalThemeStyle: terminalThemeStyleValue(record.terminalThemeStyle),
     terminalCustomBackground: colorValue(record.terminalCustomBackground),
     terminalCustomForeground: colorValue(record.terminalCustomForeground),
@@ -800,28 +800,6 @@ function existingConnectionId(snapshot: AppSnapshot, value: string | null | unde
   return value && snapshot.connections.some((connection) => connection.id === value) ? value : null;
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
-function nullableStringValue(value: unknown) {
-  if (value === null) {
-    return null;
-  }
-  return stringValue(value);
-}
-
-function stringValue(value: unknown) {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  return value.slice(0, 4000);
-}
-
-function booleanValue(value: unknown) {
-  return typeof value === "boolean" ? value : undefined;
-}
-
 function sectionIdValue(value: unknown): SectionId | undefined {
   return typeof value === "string" && sections.some((section) => section.id === value) ? value as SectionId : undefined;
 }
@@ -830,40 +808,8 @@ function cronFilterValue(value: unknown): CronJobFilter | undefined {
   return value === "all" || value === "active" || value === "paused" ? value : undefined;
 }
 
-function terminalThemeStyleValue(value: unknown): TerminalThemeStyle | undefined {
-  return value === "graphite" ||
-    value === "evergreen" ||
-    value === "dusk" ||
-    value === "paper" ||
-    value === "aubergine" ||
-    value === "porcelain" ||
-    value === "custom"
-    ? value
-    : undefined;
-}
-
-function appThemeValue(value: unknown): AppTheme | undefined {
-  if (value === "dark" || value === "light" || isDesignAppTheme(value)) {
-    return value;
-  }
-  return undefined;
-}
-
 function applyAppTheme() {
   document.documentElement.dataset.theme = state.appTheme;
-}
-
-function appThemeOptions(): AppThemeOption[] {
-  return [
-    { id: "dark", label: "Dark", title: "Switch to dark mode", icon: "moon" },
-    { id: "light", label: "Light", title: "Switch to light mode", icon: "sun" },
-    ...designAppThemeOptions.map((theme) => ({
-      id: theme.id,
-      label: theme.label,
-      title: theme.title,
-      icon: "brush",
-    })),
-  ];
 }
 
 function appThemeMenu() {
@@ -883,26 +829,6 @@ function appThemeMenu() {
   `;
 }
 
-function isDesignAppTheme(value: unknown): value is DesignAppTheme {
-  return typeof value === "string" && designAppThemeIds.includes(value as DesignAppTheme);
-}
-
-function designAppThemeLabel(theme: AppTheme) {
-  return designAppThemeOption(theme)?.label ?? designAppThemeOptions[0].label;
-}
-
-function designAppThemeOption(theme: AppTheme) {
-  if (!isDesignAppTheme(theme)) {
-    return null;
-  }
-  return designAppThemeOptions.find((option) => option.id === theme) ?? null;
-}
-
-function colorValue(value: unknown) {
-  const color = stringValue(value);
-  return color && /^#[0-9a-f]{3,8}$/i.test(color) ? color : undefined;
-}
-
 function workspaceCard(connection: ConnectionProfile) {
   const profileName = connection.customHermesHomePath
     ? lastPathComponent(connection.customHermesHomePath)
@@ -920,15 +846,15 @@ function workspaceCard(connection: ConnectionProfile) {
 function updateBanner(update: AvailableUpdate) {
   return `
     <section class="update-banner">
-      <div class="update-banner-main">
-        <strong>Hermes Desktop ${escapeHtml(update.latestVersion)} is available</strong>
+      <a class="update-banner-main update-banner-link" href="${escapeAttribute(update.htmlUrl)}" target="_blank" rel="noreferrer">
+        <strong>New version available: Hermes Desktop ${escapeHtml(update.latestVersion)}</strong>
         <span>You are running ${escapeHtml(update.currentVersion)}. ${escapeHtml(update.resolvedName)}</span>
         ${
           update.releaseNotesPreview
             ? `<pre>${escapeHtml(update.releaseNotesPreview)}</pre>`
             : `<span>Open the GitHub release to download the latest Hermes Desktop build.</span>`
         }
-      </div>
+      </a>
       <div class="update-banner-actions">
         <label class="checkbox-label compact"><input type="checkbox" data-auto-update-checks ${state.snapshot.preferences.automaticallyChecksForUpdates ? "checked" : ""} /><span>Auto checks</span></label>
         <button class="primary-button" data-action="open-update-release">${icon("link")}<span>Open Release</span></button>
@@ -938,13 +864,20 @@ function updateBanner(update: AvailableUpdate) {
   `;
 }
 
-function appBanner(message: string, kind: "error" | "status", dismissAction: string) {
-  const className = kind === "error" ? "banner error" : "banner";
+function appBanner(message: string, kind: "error" | "status", dismissAction: string, isBusyStatus = false) {
+  const className = kind === "error" ? "banner error" : `banner${isBusyStatus ? " busy" : ""}`;
   const role = kind === "error" ? "alert" : "status";
   return `
     <div class="${className}" role="${role}">
-      <span>${escapeHtml(message)}</span>
-      <button class="icon-button small" data-action="${dismissAction}" title="${t("Dismiss")}" aria-label="${t("Dismiss")}">${icon("close")}</button>
+      <span class="banner-message">
+        ${escapeHtml(message)}
+        ${isBusyStatus ? `<span class="busy-dots" aria-hidden="true"><span></span><span></span><span></span></span>` : ""}
+      </span>
+      ${
+        isBusyStatus
+          ? ""
+          : `<button class="icon-button small" data-action="${dismissAction}" title="${t("Dismiss")}" aria-label="${t("Dismiss")}">${icon("close")}</button>`
+      }
     </div>
   `;
 }
@@ -978,6 +911,10 @@ function activeContent() {
       return kanbanView();
     case "terminal":
       return terminalView();
+    case "settings":
+      return settingsView();
+    case "changelog":
+      return changelogView();
     default:
       return placeholderView(state.selectedSection);
   }
@@ -1228,6 +1165,8 @@ function sessionDetailView(session: SessionSummary) {
         <button class="secondary-button" data-action="toggle-session-pin">${icon(isPinned ? "pinOff" : "pin")}<span>${isPinned ? "Unpin" : "Pin"}</span></button>
         <button class="secondary-button" data-action="show-resume-command">${icon("terminal")}<span>Resume</span></button>
         <button class="primary-button" data-action="resume-session-terminal">${icon("terminal")}<span>Open Terminal</span></button>
+        <button class="secondary-button" data-action="export-session-md">${icon("file")}<span>Export MD</span></button>
+        <button class="secondary-button" data-action="export-session-txt">${icon("file")}<span>TXT</span></button>
         <button class="secondary-button" data-action="reload-session-detail" ${state.isLoadingSessionDetail ? "disabled" : ""}>${icon("refresh")}<span>Reload</span></button>
         <button class="danger-button" data-action="delete-session" ${state.isBusy ? "disabled" : ""}>${icon("trash")}<span>Delete</span></button>
       </div>
@@ -1543,7 +1482,8 @@ function terminalView() {
           }
         </div>
         <div class="terminal-toolbar-actions">
-          <button class="primary-button" data-action="new-terminal-tab">${icon("plus")}<span>${t("New Tab")}</span></button>
+          <button class="primary-button" data-action="new-terminal-tab">${icon("plus")}<span>${t("New Shell")}</span></button>
+          <button class="secondary-button" data-action="new-hermes-chat-terminal">${icon("chat")}<span>${t("Hermes Chat")}</span></button>
           <select data-terminal-theme title="${escapeAttribute(t("Terminal theme"))}">
             ${terminalThemeOptions()}
           </select>
@@ -1556,42 +1496,10 @@ function terminalView() {
         ${
           selectedTab
             ? terminalLiveTabView(selectedTab)
-            : `<div class="empty-state large"><strong>${t("No terminal tab")}</strong><span>${t("Create a tab to start Hermes Chat TUI.")}</span></div>`
+            : `<div class="empty-state large"><strong>${t("No terminal tab")}</strong><span>${t("Create a shell tab to work on the active SSH host.")}</span></div>`
         }
       </section>
 
-      <details class="terminal-command-runner">
-        <summary>${t("Command Runner")}</summary>
-        <section class="summary-panel terminal-panel">
-          <div class="terminal-header">
-            <div>
-              <h2>${t("Run Once")}</h2>
-              <p>${escapeHtml(activeDestination(active))} · ${escapeHtml(remoteHermesHomePath(active))}</p>
-            </div>
-            <button class="secondary-button" data-action="clear-terminal-history" ${state.terminalHistory.length ? "" : "disabled"}>${icon("trash")}<span>${t("Clear")}</span></button>
-          </div>
-
-          ${state.terminalError ? `<div class="banner error">${escapeHtml(state.terminalError)}</div>` : ""}
-
-          <form class="terminal-form" data-terminal-form>
-            <textarea name="terminalCommand" rows="4" spellcheck="false" ${state.isRunningTerminalCommand ? "disabled" : ""}>${escapeHtml(state.terminalCommand)}</textarea>
-            <div class="terminal-actions">
-              <button class="primary-button" type="submit" ${state.isRunningTerminalCommand ? "disabled" : ""}>${icon("terminal")}<span>${state.isRunningTerminalCommand ? t("Running") : t("Run Command")}</span></button>
-              <button class="secondary-button" type="button" data-terminal-template="hermes --version">${t("Hermes Version")}</button>
-              <button class="secondary-button" type="button" data-terminal-template="pwd && ls -la">${t("List Directory")}</button>
-              <button class="secondary-button" type="button" data-terminal-template="hermes chat">${t("Hermes Chat")}</button>
-            </div>
-          </form>
-        </section>
-
-        <section class="terminal-output">
-          ${
-            state.terminalHistory.length
-              ? state.terminalHistory.map(terminalResultView).join("")
-              : `<div class="empty-state large"><strong>${t("No command output yet")}</strong><span>${t("Run a one-shot command to capture stdout, stderr, and exit code.")}</span></div>`
-          }
-        </section>
-      </details>
     </div>
   `;
 }
@@ -1649,31 +1557,10 @@ function terminalLiveTabView(tab: TerminalLiveTab) {
       <pre class="terminal-fallback">${escapeHtml(terminalDisplayOutput(tab))}</pre>
     </div>
 
-    <form class="terminal-input-row" data-terminal-input-form>
-      <input name="terminalInput" autocomplete="off" spellcheck="false" value="${escapeAttribute(tab.inputDraft)}" placeholder="${escapeAttribute(t("Type a command or raw input"))}" ${isRunning ? "" : "disabled"} />
-      <button class="primary-button" type="submit" ${isRunning ? "" : "disabled"}>${icon("send")}<span>${t("Send")}</span></button>
-      <button class="secondary-button" type="button" data-terminal-control="enter" ${isRunning ? "" : "disabled"}>Enter</button>
+    <div class="terminal-control-row">
       <button class="secondary-button" type="button" data-terminal-control="ctrl-c" ${isRunning ? "" : "disabled"}>Ctrl-C</button>
       <button class="secondary-button" type="button" data-action="clear-terminal-output">${icon("trash")}<span>${t("Clear")}</span></button>
-    </form>
-  `;
-}
-
-function terminalResultView(result: TerminalCommandResult) {
-  const ok = result.exitCode === 0;
-  return `
-    <article class="terminal-result ${ok ? "ok" : "failed"}">
-      <header>
-        <div>
-          <strong>${escapeHtml(result.commandLine)}</strong>
-          <span>${escapeHtml(formatTimestamp(result.startedAt))} · exit ${result.exitCode}</span>
-        </div>
-        <button class="secondary-button" data-terminal-rerun="${escapeAttribute(result.commandLine)}">${icon("refresh")}<span>${t("Rerun")}</span></button>
-      </header>
-      ${result.stdout.trim() ? `<pre>${escapeHtml(stripTerminalArtifacts(result.stdout))}</pre>` : ""}
-      ${result.stderr.trim() ? `<pre class="terminal-stderr">${escapeHtml(stripTerminalArtifacts(result.stderr))}</pre>` : ""}
-      ${!result.stdout.trim() && !result.stderr.trim() ? `<div class="empty-state">${t("Command produced no output.")}</div>` : ""}
-    </article>
+    </div>
   `;
 }
 
@@ -1681,10 +1568,6 @@ function terminalThemeOptions() {
   return terminalThemePresets
     .map((preset) => `<option value="${preset.id}" ${state.terminalThemeStyle === preset.id ? "selected" : ""}>${escapeHtml(preset.name)}</option>`)
     .join("");
-}
-
-function terminalThemeStyleAttribute(theme: TerminalThemePreset) {
-  return `--terminal-bg:${escapeAttribute(theme.background)};--terminal-fg:${escapeAttribute(theme.foreground)};--terminal-muted:${escapeAttribute(theme.muted)};--terminal-border:${escapeAttribute(theme.border)};`;
 }
 
 function terminalDisplayOutput(tab: TerminalLiveTab) {
@@ -1701,35 +1584,12 @@ function terminalDisplayOutput(tab: TerminalLiveTab) {
   return t("Connected. Waiting for terminal output...");
 }
 
-interface TerminalThemePreset {
-  id: TerminalThemeStyle;
-  name: string;
-  background: string;
-  foreground: string;
-  muted: string;
-  border: string;
-}
-
-const terminalThemePresets: TerminalThemePreset[] = [
-  { id: "graphite", name: "Graphite", background: "#0e0e0e", foreground: "#f0f0f0", muted: "#777777", border: "#252525" },
-  { id: "evergreen", name: "Evergreen", background: "#0F1714", foreground: "#DBE8E1", muted: "#8FA79A", border: "#29443A" },
-  { id: "dusk", name: "Dusk", background: "#101726", foreground: "#DDE7F7", muted: "#95A8C4", border: "#2C3B5A" },
-  { id: "paper", name: "Paper", background: "#F5F1E8", foreground: "#2F3743", muted: "#687282", border: "#D3CAB9" },
-  { id: "aubergine", name: "Aubergine", background: "#17111F", foreground: "#EFE7FF", muted: "#AA9ABA", border: "#3C304E" },
-  { id: "porcelain", name: "Porcelain", background: "#F7F9FC", foreground: "#253040", muted: "#637084", border: "#D7DFEA" },
-  { id: "custom", name: "Custom", background: "#0e0e0e", foreground: "#f0f0f0", muted: "#777777", border: "#252525" },
-];
-
 function terminalTheme() {
-  const preset = terminalThemePresets.find((item) => item.id === state.terminalThemeStyle) ?? terminalThemePresets[0];
-  if (state.terminalThemeStyle !== "custom") {
-    return preset;
-  }
-  return {
-    ...preset,
-    background: state.terminalCustomBackground,
-    foreground: state.terminalCustomForeground,
-  };
+  return resolveTerminalTheme(
+    state.terminalThemeStyle,
+    state.terminalCustomBackground,
+    state.terminalCustomForeground,
+  );
 }
 
 function selectedTerminalTab() {
@@ -1743,7 +1603,6 @@ function terminalTabFromInfo(info: TerminalSessionInfo): TerminalLiveTab {
     stderrOutput: "",
     status: "starting",
     exitCode: null,
-    inputDraft: "",
     initialInputSent: false,
     lastEventAt: null,
   };
@@ -1789,22 +1648,23 @@ function mountTerminalRenderer() {
     });
     observer.observe(container);
     renderer.resizeObserver = observer;
+    fitAndSyncTerminalSize(renderer);
+    scheduleInitialTerminalFit(renderer);
   }
   renderer.terminal.options.theme = xtermTheme();
   if (renderer.writtenLength < tab.output.length) {
-    renderer.terminal.write(tab.output.slice(renderer.writtenLength));
+    const nextOutput = tab.output.slice(renderer.writtenLength);
+    renderer.terminal.write(nextOutput, () => {
+      renderer?.terminal.scrollToBottom();
+    });
     renderer.writtenLength = tab.output.length;
   }
-  requestAnimationFrame(() => {
-    if (renderer) {
-      fitAndSyncTerminalSize(renderer);
-    }
-  });
+  scheduleTerminalFit(renderer);
 }
 
 function createTerminalRenderer(tab: TerminalLiveTab): TerminalRenderer {
   const terminal = new XTerm({
-    convertEol: true,
+    convertEol: false,
     cursorBlink: true,
     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace",
     fontSize: 13,
@@ -1829,6 +1689,8 @@ function createTerminalRenderer(tab: TerminalLiveTab): TerminalRenderer {
     writtenLength: 0,
     syncedCols: 0,
     syncedRows: 0,
+    fitRaf: null,
+    initialFitTimer: null,
   };
 }
 
@@ -1839,7 +1701,29 @@ function fitAndSyncTerminalSize(renderer: TerminalRenderer) {
     // Fitting is best-effort because hidden panels can report zero geometry.
     return;
   }
+  renderer.terminal.scrollToBottom();
   syncTerminalSize(renderer);
+}
+
+function scheduleTerminalFit(renderer: TerminalRenderer) {
+  if (renderer.fitRaf !== null) {
+    return;
+  }
+  renderer.fitRaf = requestAnimationFrame(() => {
+    renderer.fitRaf = null;
+    fitAndSyncTerminalSize(renderer);
+  });
+}
+
+function scheduleInitialTerminalFit(renderer: TerminalRenderer) {
+  if (renderer.initialFitTimer !== null) {
+    return;
+  }
+  scheduleTerminalFit(renderer);
+  renderer.initialFitTimer = window.setTimeout(() => {
+    renderer.initialFitTimer = null;
+    scheduleTerminalFit(renderer);
+  }, 160);
 }
 
 function syncTerminalSize(renderer: TerminalRenderer) {
@@ -1863,7 +1747,9 @@ function writeTerminalRendererData(tabId: string, data: string) {
   if (!renderer) {
     return;
   }
-  renderer.terminal.write(data);
+  renderer.terminal.write(data, () => {
+    renderer.terminal.scrollToBottom();
+  });
   renderer.writtenLength += data.length;
 }
 
@@ -1874,6 +1760,12 @@ function disposeTerminalRenderer(tabId: string) {
   }
   if (renderer.resizeObserver) {
     renderer.resizeObserver.disconnect();
+  }
+  if (renderer.fitRaf !== null) {
+    cancelAnimationFrame(renderer.fitRaf);
+  }
+  if (renderer.initialFitTimer !== null) {
+    window.clearTimeout(renderer.initialFitTimer);
   }
   renderer.disposeDataHandler.dispose();
   renderer.terminal.dispose();
@@ -1887,53 +1779,7 @@ function disposeAllTerminalRenderers() {
 }
 
 function xtermTheme() {
-  const theme = terminalTheme();
-  const baseTheme = {
-    background: theme.background,
-    foreground: theme.foreground,
-    cursor: theme.foreground,
-    selectionBackground: `${theme.foreground}44`,
-  };
-  if (theme.id === "paper" || theme.id === "porcelain") {
-    return {
-      ...baseTheme,
-      black: "#1f2933",
-      red: "#b42318",
-      green: "#0f7b3a",
-      yellow: "#8a6200",
-      blue: "#1d4ed8",
-      magenta: "#8b3db4",
-      cyan: "#0f766e",
-      white: "#f8fafc",
-      brightBlack: "#667085",
-      brightRed: "#d92d20",
-      brightGreen: "#16a34a",
-      brightYellow: "#a16207",
-      brightBlue: "#2563eb",
-      brightMagenta: "#a855f7",
-      brightCyan: "#0891b2",
-      brightWhite: "#ffffff",
-    };
-  }
-  return {
-    ...baseTheme,
-    black: "#111111",
-    red: "#ff7b72",
-    green: "#83d58d",
-    yellow: "#d4e815",
-    blue: "#8ab4ff",
-    magenta: "#d2a8ff",
-    cyan: "#7dd3fc",
-    white: "#f0f0f0",
-    brightBlack: "#777777",
-    brightRed: "#ffa198",
-    brightGreen: "#a7f3b7",
-    brightYellow: "#f2e85c",
-    brightBlue: "#a7c7ff",
-    brightMagenta: "#e4c8ff",
-    brightCyan: "#a5f3fc",
-    brightWhite: "#ffffff",
-  };
+  return xtermThemeForPreset(terminalTheme());
 }
 
 function filesView() {
@@ -3098,6 +2944,377 @@ function kanbanTaskEditorView() {
   `;
 }
 
+function settingsView() {
+  const active = activeConnection();
+  return `
+    <div class="settings-layout">
+      <section class="summary-panel settings-panel">
+        <div class="panel-heading">
+          <h2>Appearance</h2>
+        </div>
+        <div class="settings-stack">
+          <label>
+            <span>Theme</span>
+            <div class="segmented-control settings-theme-grid">
+              ${appThemeOptions().map((option) => `
+                <button class="${state.appTheme === option.id ? "active" : ""}" data-theme-option="${option.id}" title="${escapeAttribute(option.title)}">
+                  ${icon(option.icon)}<span>${escapeHtml(option.label)}</span>
+                </button>
+              `).join("")}
+            </div>
+          </label>
+          <label>
+            <span>Language</span>
+            <select class="locale-select settings-select" data-settings-locale-select title="Language" aria-label="Language">
+              ${localeOptions()}
+            </select>
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" data-auto-update-checks ${state.snapshot.preferences.automaticallyChecksForUpdates ? "checked" : ""} />
+            <span>Check for updates automatically</span>
+          </label>
+        </div>
+      </section>
+
+      <section class="summary-panel settings-panel">
+        <div class="panel-heading">
+          <h2>Terminal defaults</h2>
+        </div>
+        <div class="settings-stack">
+          <label>
+            <span>Default terminal theme</span>
+            <select class="settings-select" data-settings-terminal-theme title="${escapeAttribute(t("Terminal theme"))}">
+              ${terminalThemeOptions()}
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <section class="summary-panel settings-panel">
+        <div class="panel-heading">
+          <h2>Backup & transfer</h2>
+        </div>
+        <div class="settings-stack">
+          <p class="muted-copy">Backup saves a local JSON snapshot. Full Backup streams the remote Hermes directory into a local .tar.gz archive.</p>
+          <div class="settings-button-grid">
+            <button class="secondary-button" data-action="export-json-backup">${icon("save")}<span>Backup</span></button>
+            <button class="primary-button" data-action="export-full-hermes-backup" ${active ? "" : "disabled"}>${icon("folder")}<span>Full Backup</span></button>
+            <button class="secondary-button" data-action="export-settings">${icon("save")}<span>Export Settings</span></button>
+            <button class="secondary-button" data-action="choose-settings-import">${icon("file")}<span>Import Settings</span></button>
+            <button class="secondary-button" data-action="export-profiles">${icon("network")}<span>Export Profiles</span></button>
+            <button class="secondary-button" data-action="choose-profiles-import">${icon("file")}<span>Import Profiles</span></button>
+          </div>
+          <input class="settings-file-input" type="file" accept="application/json,.json" data-settings-import />
+          <input class="settings-file-input" type="file" accept="application/json,.json" data-profiles-import />
+          <div class="settings-facts">
+            <div><span>Connections</span><strong>${state.snapshot.connections.length}</strong></div>
+            <div><span>Workflows</span><strong>${state.snapshot.preferences.workflows.length}</strong></div>
+            <div><span>Active host</span><strong>${escapeHtml(active ? active.label : "None")}</strong></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="summary-panel settings-panel">
+        <div class="panel-heading">
+          <h2>Updates</h2>
+          <button class="secondary-button" data-action="check-updates" ${state.isCheckingForUpdates ? "disabled" : ""}>${icon("refresh")}<span>${state.isCheckingForUpdates ? "Checking" : "Check Now"}</span></button>
+        </div>
+        ${settingsUpdateSummary()}
+      </section>
+    </div>
+  `;
+}
+
+function settingsUpdateSummary() {
+  if (state.availableUpdate) {
+    return `
+      <div class="release-card">
+        <a class="release-card-title" href="${escapeAttribute(state.availableUpdate.htmlUrl)}" target="_blank" rel="noreferrer">
+          <strong>New version available: ${escapeHtml(state.availableUpdate.latestVersion)}</strong>
+        </a>
+        <span>${escapeHtml(state.availableUpdate.resolvedName)}</span>
+        ${releaseAssetsView(state.availableUpdate)}
+      </div>
+    `;
+  }
+  if (state.updateCheckError) {
+    return `<div class="banner error">${escapeHtml(state.updateCheckError)}</div>`;
+  }
+  return `<p class="muted-copy">Current app version: ${escapeHtml(appVersion)}. Use Check Now to compare against GitHub Releases.</p>`;
+}
+
+function changelogView() {
+  const update = state.availableUpdate;
+  return `
+    <div class="changelog-layout">
+      <section class="summary-panel">
+        <div class="panel-heading">
+          <h2>Release dashboard</h2>
+          <button class="secondary-button" data-action="check-updates" ${state.isCheckingForUpdates ? "disabled" : ""}>${icon("refresh")}<span>${state.isCheckingForUpdates ? "Checking" : "Check Updates"}</span></button>
+        </div>
+        <div class="settings-facts changelog-facts">
+          <div><span>Current version</span><strong>${escapeHtml(appVersion)}</strong></div>
+          <div><span>Latest known release</span><strong>${escapeHtml(update?.latestVersion ?? appVersion)}</strong></div>
+          <div><span>Auto checks</span><strong>${state.snapshot.preferences.automaticallyChecksForUpdates ? "Enabled" : "Disabled"}</strong></div>
+        </div>
+      </section>
+
+      <section class="summary-panel">
+        ${
+          update
+            ? `
+              <div class="release-card large">
+                <a class="release-card-title" href="${escapeAttribute(update.htmlUrl)}" target="_blank" rel="noreferrer">
+                  <strong>New version available: Hermes Desktop ${escapeHtml(update.latestVersion)}</strong>
+                </a>
+                <span>${escapeHtml(update.resolvedName)}</span>
+                ${update.releaseNotesPreview ? `<pre>${escapeHtml(update.releaseNotesPreview)}</pre>` : "<span>Open the release page for changelog and artifacts.</span>"}
+                ${releaseAssetsView(update)}
+              </div>
+            `
+            : `<div class="empty-state large"><strong>No newer release cached</strong><span>Run an update check to load the latest GitHub release status.</span></div>`
+        }
+      </section>
+    </div>
+  `;
+}
+
+function releaseAssetsView(update: AvailableUpdate) {
+  if (update.assets.length === 0) {
+    return "";
+  }
+  return `
+    <div class="release-assets">
+      ${update.assets.slice(0, 6).map((asset) => `
+        <a href="${escapeAttribute(asset.browserDownloadUrl)}" target="_blank" rel="noreferrer">${escapeHtml(asset.name)}${asset.size ? ` · ${escapeHtml(formatBytes(asset.size))}` : ""}</a>
+      `).join("")}
+    </div>
+  `;
+}
+
+async function exportSettings() {
+  const payload = {
+    kind: "hermes-desktop-settings",
+    version: appVersion,
+    exportedAt: new Date().toISOString(),
+    uiState: persistedUiStateFromState(),
+  };
+  const path = await saveLocalTextFile(timestampedFilename("hermes-desktop-settings", "json"), exportedJsonText(payload), "application/json");
+  state = { ...state, status: `Settings exported to ${path}.` };
+  render();
+}
+
+async function exportJsonBackup() {
+  const payload = createHermesBackupPayload(appVersion, state.snapshot, persistedUiStateFromState());
+  const path = await saveLocalTextFile(timestampedFilename("hermes-desktop-backup", "json"), exportedJsonText(payload), "application/json");
+  state = { ...state, status: `JSON backup saved locally to ${path}.` };
+  render();
+}
+
+async function exportFullHermesBackup() {
+  const active = activeConnection();
+  if (!active) {
+    state = { ...state, error: "Select an active host before running Full Backup.", status: null };
+    render();
+    return;
+  }
+  setBusy(true, "Creating full Hermes backup. Please wait, large Hermes directories can take a while");
+  try {
+    const path = await saveHermesDirectoryBackup(active);
+    state = {
+      ...state,
+      isBusy: false,
+      busyStatus: null,
+      status: `Full Hermes backup downloaded to ${path}. The temporary remote archive was deleted after download.`,
+      error: null,
+    };
+    render();
+  } catch (error) {
+    setError(error);
+  } finally {
+    if (state.isBusy) {
+      setBusy(false);
+    }
+  }
+}
+
+async function exportProfiles() {
+  const payload = createProfilesExportPayload(state.snapshot);
+  const path = await saveLocalTextFile(timestampedFilename("hermes-desktop-profiles", "json"), exportedJsonText(payload), "application/json");
+  state = { ...state, status: `Profiles exported to ${path}.` };
+  render();
+}
+
+async function importSettingsFile(file: File) {
+  try {
+    const parsed = JSON.parse(await file.text());
+    const record = importedUiStateRecord(parsed);
+    if (!record) {
+      throw new Error("The selected file does not contain Hermes Desktop settings.");
+    }
+    const persisted = sanitizePersistedUiState(record);
+    const selectedSection = persisted.selectedSection && isSectionAvailable(persisted.selectedSection)
+      ? persisted.selectedSection
+      : state.selectedSection;
+    state = {
+      ...state,
+      ...restoredUiStatePatch(persisted),
+      selectedSection,
+      status: "Settings imported.",
+      error: null,
+    };
+    render();
+    scrollTerminalToBottom();
+  } catch (error) {
+    setError(error);
+  }
+}
+
+async function importProfilesFile(file: File) {
+  setBusy(true, "Importing profiles");
+  try {
+    const parsed = JSON.parse(await file.text());
+    const connections = importedConnections(parsed);
+    const workflows = importedWorkflowDrafts(parsed);
+    if (connections.length === 0 && workflows.length === 0) {
+      throw new Error("The selected file does not contain Hermes Desktop profiles.");
+    }
+
+    for (const connection of connections) {
+      await saveConnection(connection);
+    }
+
+    const active = activeConnection();
+    if (active) {
+      for (const workflow of workflows) {
+        await createWorkflow(active, workflow);
+      }
+    }
+
+    const snapshot = await appSnapshot();
+    state = {
+      ...state,
+      snapshot,
+      workspaceFileBookmarks: snapshot.preferences.workspaceFileBookmarks ?? [],
+      status: active || workflows.length === 0
+        ? `Imported ${connections.length} connection(s) and ${workflows.length} workflow(s).`
+        : `Imported ${connections.length} connection(s). Select a host before importing workflows.`,
+      error: null,
+    };
+    render();
+  } catch (error) {
+    setError(error);
+  } finally {
+    setBusy(false);
+  }
+}
+
+function importedUiStateRecord(value: unknown): Record<string, unknown> | null {
+  if (!isPlainRecord(value)) {
+    return null;
+  }
+  if (isPlainRecord(value.uiState)) {
+    return value.uiState;
+  }
+  if (value.kind === "hermes-desktop-backup" && isPlainRecord(value.uiState)) {
+    return value.uiState;
+  }
+  return value;
+}
+
+function importedConnections(value: unknown): ConnectionProfile[] {
+  const records = isPlainRecord(value) && Array.isArray(value.connections)
+    ? value.connections
+    : isPlainRecord(value) && isPlainRecord(value.snapshot) && Array.isArray(value.snapshot.connections)
+      ? value.snapshot.connections
+      : [];
+  return records.map(importedConnectionProfile).filter((connection): connection is ConnectionProfile => Boolean(connection));
+}
+
+function importedConnectionProfile(value: unknown): ConnectionProfile | null {
+  if (!isPlainRecord(value)) {
+    return null;
+  }
+  const now = new Date().toISOString();
+  const label = stringValue(value.label);
+  const sshHost = stringValue(value.sshHost);
+  if (!label || !sshHost) {
+    return null;
+  }
+  return {
+    id: stringValue(value.id) || randomId(),
+    label,
+    sshAlias: stringValue(value.sshAlias) ?? "",
+    sshHost,
+    sshPort: typeof value.sshPort === "number" ? value.sshPort : null,
+    sshUser: stringValue(value.sshUser) ?? "",
+    hermesProfile: nullableStringValue(value.hermesProfile) ?? null,
+    customHermesHomePath: nullableStringValue(value.customHermesHomePath) ?? null,
+    createdAt: stringValue(value.createdAt) ?? now,
+    updatedAt: now,
+    lastConnectedAt: nullableStringValue(value.lastConnectedAt) ?? null,
+  };
+}
+
+function importedWorkflowDrafts(value: unknown): WorkflowDraftPayload[] {
+  const records = isPlainRecord(value) && Array.isArray(value.workflows)
+    ? value.workflows
+    : isPlainRecord(value) && isPlainRecord(value.snapshot) && isPlainRecord(value.snapshot.preferences) && Array.isArray(value.snapshot.preferences.workflows)
+      ? value.snapshot.preferences.workflows
+      : [];
+  return records.map(importedWorkflowDraft).filter((workflow): workflow is WorkflowDraftPayload => Boolean(workflow));
+}
+
+function importedWorkflowDraft(value: unknown): WorkflowDraftPayload | null {
+  if (!isPlainRecord(value)) {
+    return null;
+  }
+  const name = stringValue(value.name);
+  const prompt = stringValue(value.prompt);
+  if (!name || !prompt) {
+    return null;
+  }
+  const assignedSkills = Array.isArray(value.assignedSkills)
+    ? value.assignedSkills.map(importedWorkflowSkill).filter((skill): skill is WorkflowSkillReference => Boolean(skill))
+    : [];
+  return { name, prompt, assignedSkills };
+}
+
+function importedWorkflowSkill(value: unknown): WorkflowSkillReference | null {
+  if (!isPlainRecord(value)) {
+    return null;
+  }
+  const relativePath = stringValue(value.relativePath);
+  const slug = stringValue(value.slug);
+  if (!relativePath || !slug) {
+    return null;
+  }
+  return {
+    relativePath,
+    slug,
+    name: nullableStringValue(value.name) ?? null,
+  };
+}
+
+async function exportSelectedSessionTranscript(format: "md" | "txt") {
+  const session = selectedSession();
+  if (!session) {
+    return;
+  }
+  const title = resolvedSessionTitle(session);
+  const text = format === "md"
+    ? sessionTranscriptMarkdown(session, state.sessionMessages, { title, formatTimestamp })
+    : sessionTranscriptText(session, state.sessionMessages, { title, formatTimestamp });
+  const safeTitle = title.toLowerCase().replace(/[^a-z0-9а-яё._-]+/gi, "-").replace(/^-+|-+$/g, "") || session.id;
+  const path = await saveLocalTextFile(`session-${safeTitle}.${format}`, text, format === "md" ? "text/markdown" : "text/plain");
+  state = { ...state, status: `Session transcript exported to ${path}.` };
+  render();
+}
+
+function randomId() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
 function placeholderView(section: SectionId) {
   const titles: Record<SectionId, string> = {
     connections: "Connections",
@@ -3110,6 +3327,8 @@ function placeholderView(section: SectionId) {
     usage: "Usage",
     skills: "Skills",
     terminal: "Terminal",
+    settings: "Settings",
+    changelog: "Changelog",
   };
   return `
     <div class="placeholder">
@@ -3407,7 +3626,7 @@ async function startNewSessionChatFromCommand() {
 }
 
 function isSectionAvailable(section: SectionId) {
-  return section === "connections" || Boolean(activeConnection());
+  return section === "connections" || section === "settings" || section === "changelog" || Boolean(activeConnection());
 }
 
 function bindEvents() {
@@ -3487,37 +3706,6 @@ function bindEvents() {
     void saveWorkflowDraft();
   });
 
-  app.querySelector<HTMLFormElement>("[data-terminal-form]")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const form = event.currentTarget as HTMLFormElement;
-    const data = new FormData(form);
-    state = { ...state, terminalCommand: String(data.get("terminalCommand") ?? "") };
-    void runActiveTerminalCommand();
-  });
-
-  app.querySelector<HTMLTextAreaElement>("[name='terminalCommand']")?.addEventListener("input", (event) => {
-    const textarea = event.currentTarget as HTMLTextAreaElement;
-    state = { ...state, terminalCommand: textarea.value };
-  });
-
-  app.querySelectorAll<HTMLButtonElement>("[data-terminal-template]").forEach((button) => {
-    button.addEventListener("click", () => {
-      state = { ...state, terminalCommand: button.dataset.terminalTemplate ?? state.terminalCommand };
-      render();
-    });
-  });
-
-  app.querySelectorAll<HTMLButtonElement>("[data-terminal-rerun]").forEach((button) => {
-    button.addEventListener("click", () => {
-      const commandLine = button.dataset.terminalRerun;
-      if (!commandLine) {
-        return;
-      }
-      state = { ...state, terminalCommand: commandLine };
-      void runActiveTerminalCommand();
-    });
-  });
-
   app.querySelectorAll<HTMLButtonElement>("[data-terminal-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       const tabId = button.dataset.terminalTab;
@@ -3540,47 +3728,10 @@ function bindEvents() {
 
   app.querySelector<HTMLSelectElement>("[data-terminal-theme]")?.addEventListener("change", (event) => {
     const select = event.currentTarget as HTMLSelectElement;
-    const nextTheme = terminalThemePresets.some((preset) => preset.id === select.value)
-      ? (select.value as TerminalThemeStyle)
-      : "graphite";
+    const nextTheme = terminalThemeStyleValue(select.value) ?? "graphite";
     state = { ...state, terminalThemeStyle: nextTheme };
     render();
     scrollTerminalToBottom();
-  });
-
-  app.querySelector<HTMLFormElement>("[data-terminal-input-form]")?.addEventListener("submit", (event) => {
-    event.preventDefault();
-    const tab = selectedTerminalTab();
-    const form = event.currentTarget as HTMLFormElement;
-    const data = new FormData(form);
-    const input = String(data.get("terminalInput") ?? "");
-    if (!tab || !input) {
-      return;
-    }
-    if (isTerminalControlNoise(input)) {
-      state = {
-        ...state,
-        terminalError: t("Terminal control sequence ignored."),
-        terminalTabs: state.terminalTabs.map((item) => (item.id === tab.id ? { ...item, inputDraft: "" } : item)),
-      };
-      render();
-      return;
-    }
-    form.reset();
-    const inputElement = form.elements.namedItem("terminalInput");
-    if (inputElement instanceof HTMLInputElement) {
-      inputElement.value = "";
-    }
-    updateTerminalTab(tab.id, { inputDraft: "" }, false);
-    void sendTerminalInput(tab.id, `${input}\r`);
-  });
-
-  app.querySelector<HTMLInputElement>("[name='terminalInput']")?.addEventListener("input", (event) => {
-    const tab = selectedTerminalTab();
-    if (!tab) {
-      return;
-    }
-    updateTerminalTab(tab.id, { inputDraft: (event.currentTarget as HTMLInputElement).value }, false);
   });
 
   app.querySelectorAll<HTMLButtonElement>("[data-terminal-control]").forEach((button) => {
@@ -3590,9 +3741,6 @@ function bindEvents() {
         return;
       }
       const control = button.dataset.terminalControl;
-      if (control === "enter") {
-        void sendTerminalInput(tab.id, "\r");
-      }
       if (control === "ctrl-c") {
         void sendTerminalInput(tab.id, "\x03");
       }
@@ -3852,6 +4000,32 @@ function bindEvents() {
     void updateAppLocale(select.value as AppLocale);
   });
 
+  app.querySelector<HTMLSelectElement>("[data-settings-locale-select]")?.addEventListener("change", (event) => {
+    const select = event.currentTarget as HTMLSelectElement;
+    void updateAppLocale(select.value as AppLocale);
+  });
+
+  app.querySelector<HTMLSelectElement>("[data-settings-terminal-theme]")?.addEventListener("change", (event) => {
+    const select = event.currentTarget as HTMLSelectElement;
+    const nextTheme = terminalThemeStyleValue(select.value) ?? "graphite";
+    state = { ...state, terminalThemeStyle: nextTheme, status: "Terminal theme updated." };
+    render();
+  });
+
+  app.querySelector<HTMLInputElement>("[data-settings-import]")?.addEventListener("change", (event) => {
+    const file = (event.currentTarget as HTMLInputElement).files?.[0] ?? null;
+    if (file) {
+      void importSettingsFile(file);
+    }
+  });
+
+  app.querySelector<HTMLInputElement>("[data-profiles-import]")?.addEventListener("change", (event) => {
+    const file = (event.currentTarget as HTMLInputElement).files?.[0] ?? null;
+    if (file) {
+      void importProfilesFile(file);
+    }
+  });
+
   app.querySelectorAll<HTMLButtonElement>("[data-theme-option]").forEach((button) => {
     button.addEventListener("click", () => {
       const appTheme = appThemeValue(button.dataset.themeOption);
@@ -3942,6 +4116,24 @@ function bindEvents() {
         state = { ...state, availableUpdate: null, status: tf("Opening Hermes Desktop %@ release.", update.latestVersion) };
         render();
       }
+      if (action === "export-settings") {
+        void exportSettings();
+      }
+      if (action === "export-json-backup") {
+        void exportJsonBackup();
+      }
+      if (action === "choose-settings-import") {
+        app.querySelector<HTMLInputElement>("[data-settings-import]")?.click();
+      }
+      if (action === "export-full-hermes-backup") {
+        void exportFullHermesBackup();
+      }
+      if (action === "export-profiles") {
+        void exportProfiles();
+      }
+      if (action === "choose-profiles-import") {
+        app.querySelector<HTMLInputElement>("[data-profiles-import]")?.click();
+      }
       if (action === "test-editor") {
         void testEditor();
       }
@@ -3968,6 +4160,12 @@ function bindEvents() {
       }
       if (action === "show-resume-command") {
         void showSelectedSessionResumeCommand();
+      }
+      if (action === "export-session-md") {
+        void exportSelectedSessionTranscript("md");
+      }
+      if (action === "export-session-txt") {
+        void exportSelectedSessionTranscript("txt");
       }
       if (action === "reload-workflows") {
         void loadWorkflowsPage({ reset: true });
@@ -3997,6 +4195,9 @@ function bindEvents() {
         void resumeSelectedSessionInTerminal();
       }
       if (action === "new-terminal-tab") {
+        void openDefaultShellTerminalTab({ switchToTerminal: true });
+      }
+      if (action === "new-hermes-chat-terminal") {
         void openHermesChatTerminalTab({ switchToTerminal: true });
       }
       if (action === "reconnect-terminal-tab") {
@@ -4025,10 +4226,6 @@ function bindEvents() {
         if (tab?.initialInput) {
           void sendTerminalInput(tab.id, terminalBracketedPaste(tab.initialInput));
         }
-      }
-      if (action === "clear-terminal-history") {
-        state = { ...state, terminalHistory: [], terminalError: null, status: t("Terminal output cleared.") };
-        render();
       }
       if (action === "toggle-file-browser") {
         state = { ...state, isFileBrowserOpen: !state.isFileBrowserOpen };
@@ -4272,10 +4469,6 @@ async function useSelectedConnection() {
       workflowEditorMode: "view",
       workflowDraft: emptyWorkflowDraft(),
       workflowLaunchPreview: null,
-      terminalCommand: "pwd && hermes --version",
-      terminalHistory: [],
-      terminalError: null,
-      isRunningTerminalCommand: false,
       terminalTabs: [],
       selectedTerminalTabId: null,
       workspaceFileBookmarks: [],
@@ -4396,10 +4589,6 @@ async function removeSelectedConnection() {
       workflowEditorMode: nextActive ? state.workflowEditorMode : "view",
       workflowDraft: nextActive ? state.workflowDraft : emptyWorkflowDraft(),
       workflowLaunchPreview: nextActive ? state.workflowLaunchPreview : null,
-      terminalCommand: nextActive ? state.terminalCommand : "pwd && hermes --version",
-      terminalHistory: nextActive ? state.terminalHistory : [],
-      terminalError: nextActive ? state.terminalError : null,
-      isRunningTerminalCommand: nextActive ? state.isRunningTerminalCommand : false,
       terminalTabs: nextActive ? state.terminalTabs.filter((tab) => tab.profileId !== profile.id) : [],
       selectedTerminalTabId: nextActive
         ? state.terminalTabs.filter((tab) => tab.profileId !== profile.id).at(-1)?.id ?? null
@@ -5175,6 +5364,19 @@ async function openHermesChatTerminalTab(options: { switchToTerminal?: boolean }
   }
 }
 
+async function openDefaultShellTerminalTab(options: { switchToTerminal?: boolean } = {}) {
+  const active = activeConnection();
+  if (!active) {
+    return;
+  }
+  await openTerminalTab({
+    startupCommandLine: null,
+    initialInput: null,
+    title: `${active.label} · shell`,
+    switchToTerminal: options.switchToTerminal ?? true,
+  });
+}
+
 async function openTerminalTab(options: {
   startupCommandLine?: string | null;
   initialInput?: string | null;
@@ -5201,10 +5403,11 @@ async function openTerminalTab(options: {
   const panel = app.querySelector(".terminal-live-panel") || app.querySelector(".content");
   if (panel) {
     const width = panel.clientWidth - 40; // subtract padding
-    const height = panel.clientHeight - 120; // subtract header and input row
+    const terminalChromeHeight = options.startupCommandLine ? 190 : 150;
+    const height = panel.clientHeight - terminalChromeHeight;
     if (width > 0 && height > 0) {
       cols = Math.max(40, Math.floor(width / 8)); // 8px font width estimate
-      rows = Math.max(10, Math.floor(height / 16)); // 16px font height estimate
+      rows = Math.max(10, Math.min(24, Math.floor(height / 16))); // start conservatively; exact rows sync after xterm mounts
     }
   }
 
@@ -5297,7 +5500,7 @@ function handleTerminalSessionEvent(event: TerminalSessionEvent) {
   const patch: Partial<TerminalLiveTab> = { lastEventAt: event.timestamp };
   let shouldRender = true;
   if (event.kind === "stdout" || event.kind === "stderr") {
-    const data = stripTerminalGeneratedResponses(event.data ?? "");
+    const data = event.data ?? "";
     patch.output = `${tab.output}${data}`;
     if (event.kind === "stderr") {
       patch.stderrOutput = `${tab.stderrOutput}${data}`;
@@ -5337,54 +5540,14 @@ function updateTerminalTab(tabId: string, patch: Partial<TerminalLiveTab>, shoul
 
 function scrollTerminalToBottom() {
   requestAnimationFrame(() => {
+    const tab = selectedTerminalTab();
+    const renderer = tab ? terminalRenderers.get(tab.id) : null;
+    renderer?.terminal.scrollToBottom();
     const screen = app.querySelector<HTMLElement>("[data-terminal-screen]");
     if (screen) {
       screen.scrollTop = screen.scrollHeight;
     }
   });
-}
-
-async function runActiveTerminalCommand() {
-  const active = activeConnection();
-  const commandLine = state.terminalCommand.trim();
-  if (!active || state.isRunningTerminalCommand) {
-    return;
-  }
-  if (!commandLine) {
-    state = { ...state, terminalError: t("Terminal command is required.") };
-    render();
-    return;
-  }
-
-  state = {
-    ...state,
-    terminalCommand: commandLine,
-    terminalError: null,
-    isRunningTerminalCommand: true,
-    status: t("Running terminal command"),
-    error: null,
-  };
-  render();
-
-  try {
-    const result = await runTerminalCommand(active, commandLine);
-    state = {
-      ...state,
-      terminalHistory: [result, ...state.terminalHistory].slice(0, 50),
-      terminalError: null,
-      isRunningTerminalCommand: false,
-      status: tf("Terminal command exited with code %@.", result.exitCode),
-      error: null,
-    };
-    render();
-  } catch (error) {
-    state = {
-      ...state,
-      terminalError: error instanceof Error ? error.message : String(error),
-      isRunningTerminalCommand: false,
-    };
-    setError(error);
-  }
 }
 
 function toggleWorkflowDraftSkill(relativePath: string, isSelected: boolean) {
@@ -7976,7 +8139,11 @@ function isSessionPinned(sessionId: string) {
 }
 
 function setBusy(isBusy: boolean, status: string | null = null) {
-  state = { ...state, isBusy, status: status ?? state.status };
+  state = {
+    ...state,
+    isBusy,
+    busyStatus: isBusy ? status ?? state.busyStatus : null,
+  };
   render();
 }
 
@@ -8111,13 +8278,30 @@ function stripTerminalGeneratedResponses(value: string) {
     .replace(/\](?:10|11|12);rgb:[0-9a-f/]+/gi, "");
 }
 
-function isTerminalControlNoise(value: string) {
-  return /\x1B\](?:10|11|12);/i.test(value) || /\](?:10|11|12);rgb:/i.test(value);
-}
-
 function lastPathComponent(path: string) {
   const trimmed = path.replace(/\/+$/g, "");
   return trimmed.split("/").filter(Boolean).at(-1) ?? path;
+}
+
+function downloadTextFile(filename: string, content: string, type: string) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function saveLocalTextFile(filename: string, content: string, type: string) {
+  try {
+    return await saveLocalExport(filename, content);
+  } catch {
+    downloadTextFile(filename, content, type);
+    return "browser downloads";
+  }
 }
 
 function sectionTitle(section: SectionId) {
@@ -8166,6 +8350,7 @@ function icon(name: string) {
     save: `<svg class="icon-svg" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`,
     search: `<svg class="icon-svg" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
     send: `<svg class="icon-svg" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>`,
+    settings: `<svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1A2 2 0 1 1 7.1 4.2l.1.1a1.7 1.7 0 0 0 1.9.3h.1A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.6h.1a1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9v.1a1.7 1.7 0 0 0 1.6.8h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.7 1z"/></svg>`,
     sun: `<svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>`,
     terminal: `<svg class="icon-svg" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>`,
     trash: `<svg class="icon-svg" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>`,

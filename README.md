@@ -123,7 +123,8 @@ Rust changes trigger an automatic backend rebuild.
 hermes-desktop/
 ├── src/                      # TypeScript/HTML/CSS frontend
 │   ├── main.ts               # Application entry, all UI modules
-│   ├── styles.css             # Global styles, dark/light theme variables
+│   ├── styles.css             # Shared layout/component styles
+│   ├── themes.css             # App theme variables and overrides
 │   ├── api.ts                 # Tauri invoke wrappers
 │   ├── types.ts               # Shared TypeScript types
 │   ├── i18n.ts                # Localization engine + dictionaries
@@ -151,7 +152,8 @@ hermes-desktop/
 │       └── error.rs           # Error types
 ├── scripts/
 │   ├── install-tauri-linux-deps.sh   # Linux system dependency installer
-│   └── check-i18n.mjs               # Localization coverage checker
+│   ├── check-i18n.mjs                # Localization coverage checker
+│   └── smoke-ui-themes.mjs           # UI theme/view smoke test
 ├── index.html                 # Vite entry HTML
 ├── vite.config.ts             # Vite configuration
 ├── package.json               # npm scripts and dependencies
@@ -171,7 +173,8 @@ hermes-desktop/
 | `npm run tauri:build:macos` | Build `.dmg` bundle |
 | `npm run tauri:build:windows` | Build `.msi` and `.nsis` installers |
 | `npm run test:i18n` | Verify localization key parity across all locales |
-| `npm run release -- 0.10.4 --push` | Bump all app versions, run release checks, commit, tag, and push the tag for CI release |
+| `npm run test:smoke:ui` | Smoke-check app themes, Sessions, Terminal, and mobile layout |
+| `npm run release:prepare -- 0.10.4` | Bump app versions and run release checks before a normal git commit/tag/push |
 | `npm run test:smoke:ssh` | Run read-only SSH smoke tests against a real Hermes host |
 | `npm run test:smoke:ssh:mutations` | Run disposable mutation smoke tests against a real host |
 
@@ -250,6 +253,9 @@ npm run build
 # Localization coverage
 npm run test:i18n
 
+# UI smoke test (uses Chromium when available, falls back to source invariants)
+npm run test:smoke:ui
+
 # Rust unit tests (36 tests: storage, SSH, remote payloads, terminal, workflows)
 cargo test --manifest-path src-tauri/Cargo.toml
 
@@ -317,17 +323,28 @@ GitHub Actions summary page.
 
 ### Release process
 
-Use the release script so app versions, commits, tags, and release notes stay in sync:
+Prepare the version bump and local checks:
 
 ```bash
-npm run release -- 0.10.4 --push
+npm run release:prepare -- 0.10.4
 ```
 
-The script updates `package.json`, `package-lock.json`, `src-tauri/Cargo.toml`,
-`src-tauri/Cargo.lock`, and `src-tauri/tauri.conf.json`, then runs localization,
-frontend, Rust formatting, Rust check, and Rust test gates before creating an
-annotated tag. Pushing the tag starts the existing GitHub Actions release job;
-do not create GitHub Releases manually before CI artifacts are ready.
+The prepare script updates `package.json`, `package-lock.json`,
+`src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and
+`src-tauri/tauri.conf.json`, then runs localization, frontend, Rust formatting,
+Rust check, and Rust test gates. It does not commit, tag, push, or create a
+GitHub Release.
+
+Review the diff, then use the normal git release flow:
+
+```bash
+git commit -m "Release v0.10.4"
+git tag -a v0.10.4 -m "Release v0.10.4"
+git push origin main v0.10.4
+```
+
+Pushing the tag starts the existing GitHub Actions release job; do not create
+GitHub Releases manually before CI artifacts are ready.
 
 ## Configuration
 

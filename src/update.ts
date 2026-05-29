@@ -7,9 +7,16 @@ export interface AvailableUpdate {
   htmlUrl: string;
   name: string | null;
   body: string | null;
+  assets: ReleaseAsset[];
   latestVersion: string;
   resolvedName: string;
   releaseNotesPreview: string | null;
+}
+
+export interface ReleaseAsset {
+  name: string;
+  browserDownloadUrl: string;
+  size: number | null;
 }
 
 interface GitHubReleaseResponse {
@@ -17,6 +24,11 @@ interface GitHubReleaseResponse {
   html_url: string;
   name?: string | null;
   body?: string | null;
+  assets?: Array<{
+    name?: string | null;
+    browser_download_url?: string | null;
+    size?: number | null;
+  }>;
 }
 
 export async function checkForHermesDesktopUpdate(currentVersion: string): Promise<AvailableUpdate | null> {
@@ -46,6 +58,7 @@ export async function checkForHermesDesktopUpdate(currentVersion: string): Promi
     htmlUrl: release.html_url,
     name: release.name ?? null,
     body,
+    assets: releaseAssets(release.assets),
     latestVersion,
     resolvedName,
     releaseNotesPreview: releaseNotesPreview(body),
@@ -93,4 +106,14 @@ function releaseNotesPreview(body: string | null) {
     return trimmed;
   }
   return `${trimmed.slice(0, 700)}...`;
+}
+
+function releaseAssets(assets: GitHubReleaseResponse["assets"]): ReleaseAsset[] {
+  return (assets ?? [])
+    .map((asset) => ({
+      name: asset.name?.trim() ?? "",
+      browserDownloadUrl: asset.browser_download_url?.trim() ?? "",
+      size: typeof asset.size === "number" && Number.isFinite(asset.size) ? asset.size : null,
+    }))
+    .filter((asset) => asset.name && asset.browserDownloadUrl);
 }

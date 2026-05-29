@@ -4,6 +4,7 @@ mod discovery;
 mod error;
 mod file;
 mod kanban;
+mod local_export;
 mod models;
 mod remote_python;
 mod session;
@@ -39,6 +40,7 @@ use kanban::{
     set_kanban_task_parents_inner, specify_kanban_task_inner, unblock_kanban_task_inner,
     update_kanban_task_fields_inner,
 };
+use local_export::{save_hermes_directory_backup_inner, save_local_export_inner};
 use models::{
     AppSnapshot, ConnectionProfile, CronJob, CronJobDraftPayload, FileSaveResult, FileSnapshot,
     HermesChatTurnResult, KanbanBoard, KanbanBoardDraftPayload, KanbanBoardOperationResponse,
@@ -104,6 +106,18 @@ fn mark_automatic_update_check(storage: State<'_, AppStorage>) -> Result<AppSnap
     preferences.last_automatic_update_check_at = Some(Utc::now());
     save_preferences(&storage, &preferences).map_err(|error| error.to_string())?;
     load_snapshot(&storage).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn save_local_export(file_name: String, contents: String) -> Result<String, String> {
+    save_local_export_inner(file_name, contents).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn save_hermes_directory_backup(profile: ConnectionProfile) -> Result<String, String> {
+    save_hermes_directory_backup_inner(profile)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -1201,6 +1215,8 @@ pub fn run() {
             set_automatic_update_checks,
             set_app_locale,
             mark_automatic_update_check,
+            save_local_export,
+            save_hermes_directory_backup,
             list_connections,
             save_connection,
             delete_connection,

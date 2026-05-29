@@ -625,4 +625,6 @@ export type SectionId =
   | "files"
   | "usage"
   | "skills"
-  | "terminal";
+  | "terminal"
+  | "settings"
+  | "changelog";

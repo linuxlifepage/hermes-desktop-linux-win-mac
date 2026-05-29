@@ -1,6 +1,6 @@
 [package]
 name = "hermes-desktop-tauri"
-version = "0.10.3"
+version = "0.10.4"
 description = "Cross-platform Hermes Desktop client built with Tauri"
 authors = ["Hermes Desktop contributors"]
 edition = "2021"
