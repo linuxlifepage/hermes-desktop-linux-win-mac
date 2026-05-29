@@ -256,7 +256,7 @@ npm run test:i18n
 # UI smoke test (uses Chromium when available, falls back to source invariants)
 npm run test:smoke:ui
 
-# Rust unit tests (36 tests: storage, SSH, remote payloads, terminal, workflows)
+# Rust unit tests: storage, SSH, remote payloads, terminal, workflows
 cargo test --manifest-path src-tauri/Cargo.toml
 
 # Rust formatting check
@@ -339,12 +339,14 @@ Review the diff, then use the normal git release flow:
 
 ```bash
 git commit -m "Release v0.10.4"
-git tag -a v0.10.4 -m "Release v0.10.4"
+$EDITOR RELEASE_NOTES.md
+git tag -a v0.10.4 -F RELEASE_NOTES.md
 git push origin main v0.10.4
 ```
 
-Pushing the tag starts the existing GitHub Actions release job; do not create
-GitHub Releases manually before CI artifacts are ready.
+The annotated tag body becomes the GitHub Release notes, so it must explicitly
+list user-visible changes. Pushing the tag starts the existing GitHub Actions
+release job; do not create GitHub Releases manually before CI artifacts are ready.
 
 ## Configuration
 

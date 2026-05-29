@@ -72,6 +72,7 @@ pub fn normalize_profile(mut profile: ConnectionProfile) -> Result<ConnectionPro
     profile.ssh_alias = profile.ssh_alias.trim().to_string();
     profile.ssh_host = profile.ssh_host.trim().to_string();
     profile.ssh_user = profile.ssh_user.trim().to_string();
+    profile.ssh_password = profile.ssh_password.filter(|password| !password.is_empty());
     profile.hermes_profile = normalize_optional(profile.hermes_profile);
     profile.custom_hermes_home_path = normalize_custom_hermes_home(profile.custom_hermes_home_path);
 

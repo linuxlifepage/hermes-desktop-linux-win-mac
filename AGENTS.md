@@ -34,4 +34,4 @@ History uses concise imperative commit messages, for example `Fix macOS PTY open
 
 ## Release & Configuration Notes
 
-Do not create GitHub Releases manually before CI artifacts exist. For release prep, run `npm run release:prepare -- 0.10.4`; it only bumps versions and runs checks. Normal flow after review: `git commit -m "Release v0.10.4"`, `git tag -a v0.10.4 -m "Release v0.10.4"`, then `git push origin main v0.10.4`. GitHub Actions builds bundles and creates or updates the release.
+Do not create GitHub Releases manually before CI artifacts exist. For release prep, run `npm run release:prepare -- 0.10.4`; it only bumps versions and runs checks. Normal flow after review: `git commit -m "Release v0.10.4"`, write explicit notes in `RELEASE_NOTES.md`, `git tag -a v0.10.4 -F RELEASE_NOTES.md`, then `git push origin main v0.10.4`. The annotated tag body becomes the GitHub Release notes and must list all user-visible fixes/features; never push a release tag with only `Release vX.Y.Z`. GitHub Actions builds bundles and creates or updates the release.

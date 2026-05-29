@@ -56,6 +56,8 @@ pub struct ConnectionProfile {
     pub ssh_host: String,
     pub ssh_port: Option<u16>,
     pub ssh_user: String,
+    #[serde(default, skip_serializing)]
+    pub ssh_password: Option<String>,
     pub hermes_profile: Option<String>,
     pub custom_hermes_home_path: Option<String>,
     pub created_at: DateTime<Utc>,
@@ -73,6 +75,7 @@ impl Default for ConnectionProfile {
             ssh_host: String::new(),
             ssh_port: None,
             ssh_user: String::new(),
+            ssh_password: None,
             hermes_profile: None,
             custom_hermes_home_path: None,
             created_at: now,

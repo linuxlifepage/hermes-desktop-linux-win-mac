@@ -1,8 +1,12 @@
 use crate::connection::{effective_target, remote_service_command};
 use crate::error::{HermesError, Result};
 use crate::models::ConnectionProfile;
+#[cfg(unix)]
+use std::fs;
 use std::io::Write;
 use std::process::{Command, Stdio};
+#[cfg(unix)]
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug)]
 pub struct SshCommandResult {
@@ -39,14 +43,27 @@ pub async fn execute(
     tauri::async_runtime::spawn_blocking(move || {
         let remote_command = remote_service_command(&profile, &command_line);
         let arguments = shell_arguments(&profile, Some(remote_command), false);
-        run_ssh(arguments, standard_input)
+        run_ssh(arguments, standard_input, profile.ssh_password.as_deref())
     })
     .await
     .map_err(|error| HermesError::Launch(error.to_string()))?
 }
 
-fn run_ssh(arguments: Vec<String>, standard_input: Option<Vec<u8>>) -> Result<SshCommandResult> {
-    let mut child = Command::new("ssh")
+fn run_ssh(
+    arguments: Vec<String>,
+    standard_input: Option<Vec<u8>>,
+    password: Option<&str>,
+) -> Result<SshCommandResult> {
+    #[cfg(not(unix))]
+    if password.filter(|value| !value.is_empty()).is_some() {
+        return Err(HermesError::Validation(
+            "SSH password authentication is currently supported on macOS and Linux builds only."
+                .to_string(),
+        ));
+    }
+
+    let mut command = Command::new("ssh");
+    command
         .args(arguments)
         .stdin(if standard_input.is_some() {
             Stdio::piped()
@@ -54,7 +71,12 @@ fn run_ssh(arguments: Vec<String>, standard_input: Option<Vec<u8>>) -> Result<Ss
             Stdio::null()
         })
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+
+    #[cfg(unix)]
+    let _askpass = configure_password_askpass(&mut command, password)?;
+
+    let mut child = command
         .spawn()
         .map_err(|error| HermesError::Launch(error.to_string()))?;
 
@@ -74,21 +96,88 @@ fn run_ssh(arguments: Vec<String>, standard_input: Option<Vec<u8>>) -> Result<Ss
     })
 }
 
+#[cfg(unix)]
+struct AskpassScript {
+    path: std::path::PathBuf,
+}
+
+#[cfg(unix)]
+impl Drop for AskpassScript {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+#[cfg(unix)]
+fn configure_password_askpass(
+    command: &mut Command,
+    password: Option<&str>,
+) -> Result<Option<AskpassScript>> {
+    let Some(password) = password.filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or_default();
+    let path = std::env::temp_dir().join(format!(
+        "hermes-desktop-ssh-askpass-{}-{stamp}.sh",
+        std::process::id()
+    ));
+    fs::write(
+        &path,
+        "#!/bin/sh\nprintf '%s\\n' \"$HERMES_DESKTOP_SSH_PASSWORD\"\n",
+    )
+    .map_err(|error| HermesError::Launch(error.to_string()))?;
+
+    use std::os::unix::fs::PermissionsExt;
+    let mut permissions = fs::metadata(&path)
+        .map_err(|error| HermesError::Launch(error.to_string()))?
+        .permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(&path, permissions)
+        .map_err(|error| HermesError::Launch(error.to_string()))?;
+
+    command
+        .env("SSH_ASKPASS", &path)
+        .env("SSH_ASKPASS_REQUIRE", "force")
+        .env("DISPLAY", "hermes-desktop")
+        .env("HERMES_DESKTOP_SSH_PASSWORD", password);
+
+    Ok(Some(AskpassScript { path }))
+}
+
 pub fn shell_arguments(
     profile: &ConnectionProfile,
     remote_command: Option<String>,
     allocate_tty: bool,
 ) -> Vec<String> {
-    let mut arguments = vec![
-        "-o".to_string(),
-        "BatchMode=yes".to_string(),
+    let mut arguments = vec!["-o".to_string()];
+
+    if allocate_tty || has_ssh_password(profile) {
+        arguments.push("BatchMode=no".to_string());
+    } else {
+        arguments.push("BatchMode=yes".to_string());
+    }
+
+    if has_ssh_password(profile) && !allocate_tty {
+        arguments.extend([
+            "-o".to_string(),
+            "NumberOfPasswordPrompts=1".to_string(),
+            "-o".to_string(),
+            "PreferredAuthentications=publickey,password,keyboard-interactive".to_string(),
+        ]);
+    }
+
+    arguments.extend([
         "-o".to_string(),
         "ConnectTimeout=10".to_string(),
         "-o".to_string(),
         "ServerAliveInterval=15".to_string(),
         "-o".to_string(),
         "ServerAliveCountMax=3".to_string(),
-    ];
+    ]);
 
     arguments.push(if allocate_tty { "-tt" } else { "-T" }.to_string());
 
@@ -104,6 +193,13 @@ pub fn shell_arguments(
     }
 
     arguments
+}
+
+fn has_ssh_password(profile: &ConnectionProfile) -> bool {
+    profile
+        .ssh_password
+        .as_deref()
+        .is_some_and(|password| !password.is_empty())
 }
 
 fn destination(profile: &ConnectionProfile) -> String {
@@ -143,7 +239,7 @@ fn describe_remote_failure(
     let target = profile.map(effective_target).unwrap_or_default();
 
     if lowered.contains("permission denied") {
-        return "SSH authentication failed. Verify the key, SSH agent, and user for this SSH target.".to_string();
+        return "SSH authentication failed. Verify the password, key, SSH agent, and user for this SSH target.".to_string();
     }
     if lowered.contains("host key verification failed") {
         return "SSH host key verification failed. Connect once in a terminal or update known_hosts before retrying."
@@ -241,7 +337,22 @@ mod tests {
 
         assert!(arguments.contains(&"-tt".to_string()));
         assert!(!arguments.contains(&"-T".to_string()));
+        assert!(arguments.contains(&"BatchMode=no".to_string()));
         assert_eq!(arguments.last().map(String::as_str), Some("example.com"));
+    }
+
+    #[test]
+    fn shell_arguments_allow_password_for_non_interactive_commands_only() {
+        let mut profile = profile("", "example.com", "alice", None);
+        profile.ssh_password = Some("secret".to_string());
+
+        let service_arguments = shell_arguments(&profile, Some("python3 -".to_string()), false);
+        let terminal_arguments = shell_arguments(&profile, None, true);
+
+        assert!(service_arguments.contains(&"BatchMode=no".to_string()));
+        assert!(service_arguments.contains(&"NumberOfPasswordPrompts=1".to_string()));
+        assert!(!service_arguments.contains(&"BatchMode=yes".to_string()));
+        assert!(terminal_arguments.contains(&"BatchMode=no".to_string()));
     }
 
     #[test]

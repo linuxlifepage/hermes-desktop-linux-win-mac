@@ -198,6 +198,7 @@ interface AppState {
   appTheme: AppTheme;
   isThemeMenuOpen: boolean;
   editor: ConnectionProfile | null;
+  sshPasswords: Record<string, string>;
   isEditingNewConnection: boolean;
   sessions: SessionSummary[];
   pinnedSessions: PinnedSession[];
@@ -431,6 +432,7 @@ let state: AppState = {
   appTheme: "dark",
   isThemeMenuOpen: false,
   editor: null,
+  sshPasswords: {},
   isEditingNewConnection: false,
   sessions: [],
   pinnedSessions: [],
@@ -992,6 +994,11 @@ function connectionEditor() {
           <input name="sshPort" value="${escapeAttribute(profile.sshPort?.toString() ?? "")}" inputmode="numeric" />
         </label>
       </div>
+
+      <label>
+        <span>SSH password (not saved)</span>
+        <input name="sshPassword" type="password" value="${escapeAttribute(profile.sshPassword ?? "")}" autocomplete="current-password" placeholder="Optional for hosts without SSH keys" />
+      </label>
 
       <div class="form-grid">
         <label>
@@ -3248,6 +3255,7 @@ function importedConnectionProfile(value: unknown): ConnectionProfile | null {
     sshHost,
     sshPort: typeof value.sshPort === "number" ? value.sshPort : null,
     sshUser: stringValue(value.sshUser) ?? "",
+    sshPassword: null,
     hermesProfile: nullableStringValue(value.hermesProfile) ?? null,
     customHermesHomePath: nullableStringValue(value.customHermesHomePath) ?? null,
     createdAt: stringValue(value.createdAt) ?? now,
@@ -3646,10 +3654,11 @@ function bindEvents() {
       if (!connection) {
         return;
       }
+      const editor = withConnectionPassword(connection);
       state = {
         ...state,
         selectedConnectionId: id ?? null,
-        editor: structuredClone(connection),
+        editor: structuredClone(editor),
         isEditingNewConnection: false,
         error: null,
         status: null,
@@ -4378,13 +4387,16 @@ async function saveEditor() {
   try {
     const profile = readProfileForm(form);
     const saved = await saveConnection(profile);
+    const sshPasswords = rememberSshPassword(state.sshPasswords, saved.id, profile.sshPassword);
+    const savedWithPassword = withConnectionPassword(saved, sshPasswords);
     const existing = state.snapshot.connections.filter((connection) => connection.id !== saved.id);
     const connections = [...existing, saved].sort((left, right) => left.label.localeCompare(right.label));
     state = {
       ...state,
+      sshPasswords,
       snapshot: { ...state.snapshot, connections },
       selectedConnectionId: saved.id,
-      editor: structuredClone(saved),
+      editor: structuredClone(savedWithPassword),
       isEditingNewConnection: false,
       error: null,
       status: t("Connection saved."),
@@ -4409,12 +4421,19 @@ async function testEditor() {
     setError(error);
     return;
   }
-  state = { ...state, editor: profile, selectedConnectionId: state.isEditingNewConnection ? null : profile.id };
+  const sshPasswords = rememberSshPassword(state.sshPasswords, profile.id, profile.sshPassword);
+  state = {
+    ...state,
+    sshPasswords,
+    editor: profile,
+    selectedConnectionId: state.isEditingNewConnection ? null : profile.id,
+  };
   setBusy(true, t("Testing SSH connection"));
   try {
     const discovery = await testConnection(profile);
     state = {
       ...state,
+      sshPasswords,
       selectedConnectionId: state.isEditingNewConnection ? null : profile.id,
       editor: profile,
       overview: discovery,
@@ -4434,6 +4453,18 @@ async function useSelectedConnection() {
   if (!id) {
     return;
   }
+  let pendingEditor = state.editor;
+  const form = app.querySelector<HTMLFormElement>(".connection-form");
+  if (form && state.editor?.id === id) {
+    try {
+      pendingEditor = readProfileForm(form);
+    } catch (error) {
+      setError(error);
+      return;
+    }
+  }
+  const pendingPassword = pendingEditor?.id === id ? pendingEditor.sshPassword : undefined;
+  const sshPasswords = rememberSshPassword(state.sshPasswords, id, pendingPassword);
   if (hasDirtyWorkspaceFiles()) {
     const confirmed = window.confirm(t("Discard unsaved Workspace Files edits before switching the active host?"));
     if (!confirmed) {
@@ -4446,12 +4477,14 @@ async function useSelectedConnection() {
   try {
     const snapshot = await setActiveConnection(id);
     const active = snapshot.connections.find((connection) => connection.id === id) ?? null;
+    const activeWithPassword = active ? withConnectionPassword(active, sshPasswords) : null;
     state = {
       ...state,
+      sshPasswords,
       snapshot,
       selectedConnectionId: id,
       selectedSection: active ? "overview" : "connections",
-      editor: active ? structuredClone(active) : state.editor,
+      editor: activeWithPassword ? structuredClone(activeWithPassword) : state.editor,
       isEditingNewConnection: false,
       sessions: [],
       sessionTotalCount: 0,
@@ -4532,9 +4565,9 @@ async function useSelectedConnection() {
       error: null,
     };
     render();
-    if (active) {
-      await refreshWorkspaceFileBookmarks(active);
-      await refreshOverview(active);
+    if (activeWithPassword) {
+      await refreshWorkspaceFileBookmarks(activeWithPassword);
+      await refreshOverview(activeWithPassword);
     }
   } catch (error) {
     setError(error);
@@ -4557,12 +4590,15 @@ async function removeSelectedConnection() {
   try {
     await deleteConnection(profile.id);
     const connections = state.snapshot.connections.filter((connection) => connection.id !== profile.id);
+    const sshPasswords = { ...state.sshPasswords };
+    delete sshPasswords[profile.id];
     const nextActive =
       state.snapshot.preferences.activeConnectionId === profile.id
         ? null
         : state.snapshot.preferences.activeConnectionId;
     state = {
       ...state,
+      sshPasswords,
       snapshot: {
         ...state.snapshot,
         connections,
@@ -7055,6 +7091,7 @@ function readProfileForm(form: HTMLFormElement): ConnectionProfile {
   const data = new FormData(form);
   const profile = state.editor ?? newConnection();
   const portValue = String(data.get("sshPort") ?? "").trim();
+  const sshPassword = String(data.get("sshPassword") ?? "");
   if (portValue && !/^\d+$/.test(portValue)) {
     throw new Error(t("Port must be a positive number."));
   }
@@ -7068,6 +7105,7 @@ function readProfileForm(form: HTMLFormElement): ConnectionProfile {
     sshHost: String(data.get("sshHost") ?? ""),
     sshPort: portValue ? Number(portValue) : null,
     sshUser: String(data.get("sshUser") ?? ""),
+    sshPassword: sshPassword ? sshPassword : null,
     hermesProfile: optionalString(data.get("hermesProfile")),
     customHermesHomePath: optionalString(data.get("customHermesHomePath")),
   };
@@ -7082,6 +7120,7 @@ function newConnection(): ConnectionProfile {
     sshHost: "",
     sshPort: null,
     sshUser: "",
+    sshPassword: null,
     hermesProfile: null,
     customHermesHomePath: null,
     createdAt,
@@ -7092,7 +7131,33 @@ function newConnection(): ConnectionProfile {
 
 function activeConnection(): ConnectionProfile | null {
   const id = state.snapshot.preferences.activeConnectionId;
-  return state.snapshot.connections.find((connection) => connection.id === id) ?? null;
+  const connection = state.snapshot.connections.find((connection) => connection.id === id) ?? null;
+  return connection ? withConnectionPassword(connection) : null;
+}
+
+function withConnectionPassword(
+  connection: ConnectionProfile,
+  passwords: Record<string, string> = state.sshPasswords,
+): ConnectionProfile {
+  const password = passwords[connection.id];
+  return {
+    ...connection,
+    sshPassword: password || null,
+  };
+}
+
+function rememberSshPassword(
+  passwords: Record<string, string>,
+  id: string,
+  password: string | null | undefined,
+): Record<string, string> {
+  const next = { ...passwords };
+  if (password) {
+    next[id] = password;
+  } else if (password === null) {
+    delete next[id];
+  }
+  return next;
 }
 
 function selectedSession(): SessionSummary | null {

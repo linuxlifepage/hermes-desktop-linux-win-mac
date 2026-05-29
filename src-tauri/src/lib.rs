@@ -1150,6 +1150,7 @@ mod smoke_tests {
                 .ok()
                 .and_then(|value| value.parse::<u16>().ok()),
             ssh_user: std::env::var("HERMES_SMOKE_USER").unwrap_or_default(),
+            ssh_password: None,
             hermes_profile: std::env::var("HERMES_SMOKE_PROFILE")
                 .ok()
                 .filter(|value| !value.trim().is_empty()),

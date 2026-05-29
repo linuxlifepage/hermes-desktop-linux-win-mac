@@ -20,6 +20,7 @@ export interface ConnectionProfile {
   sshHost: string;
   sshPort: number | null;
   sshUser: string;
+  sshPassword?: string | null;
   hermesProfile: string | null;
   customHermesHomePath: string | null;
   createdAt: string;

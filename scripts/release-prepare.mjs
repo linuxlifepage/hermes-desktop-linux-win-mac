@@ -34,8 +34,11 @@ console.log("");
 console.log("Review the version changes, then run:");
 console.log(`  git add package.json package-lock.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json`);
 console.log(`  git commit -m "Release ${tag}"`);
-console.log(`  git tag -a ${tag} -m "Release ${tag}"`);
+console.log("  $EDITOR RELEASE_NOTES.md");
+console.log(`  git tag -a ${tag} -F RELEASE_NOTES.md`);
 console.log(`  git push origin ${currentBranchForMessage()} ${tag}`);
+console.log("");
+console.log("The annotated tag body becomes the GitHub Release notes, so list the user-visible changes there.");
 
 function normalizeVersion(value) {
   const normalized = value.trim().replace(/^v/i, "");
